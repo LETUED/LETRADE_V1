@@ -159,7 +159,9 @@ class CoreEngine:
                 extra={
                     "component": "core_engine",
                     "uptime_seconds": (
-                        (datetime.now(timezone.utc) - self.status.start_time).total_seconds()
+                        (
+                            datetime.now(timezone.utc) - self.status.start_time
+                        ).total_seconds()
                         if self.status.start_time
                         else 0
                     ),
@@ -183,7 +185,9 @@ class CoreEngine:
         """
         uptime = None
         if self.status.start_time and self.status.is_running:
-            uptime = (datetime.now(timezone.utc) - self.status.start_time).total_seconds()
+            uptime = (
+                datetime.now(timezone.utc) - self.status.start_time
+            ).total_seconds()
 
         return {
             "is_running": self.status.is_running,
