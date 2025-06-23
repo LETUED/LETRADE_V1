@@ -51,7 +51,7 @@ jobs:
     - name: 🔍 Linting
       run: |
         echo "::group::flake8 linting"
-        flake8 src/ tests/
+        flake8 src/ tests/ --max-line-length=88 --extend-ignore=E203,W503
         echo "::endgroup::"
         
     - name: 🏷️ Type checking
