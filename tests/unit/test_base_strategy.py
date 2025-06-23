@@ -3,9 +3,7 @@
 Tests the interface contract and utility functions for strategy development.
 """
 
-import asyncio
 from datetime import datetime
-from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
@@ -354,7 +352,7 @@ class TestUtilityFunctions:
         assert not pd.isna(ema_10.iloc[-1])
         assert not pd.isna(sma_10.iloc[-1])
         # In general case, they should be different
-        # Note: Direction depends on recent price movement, so just check they're computed
+        # Direction depends on recent price movement, just check computed
 
     def test_calculate_rsi(self, sample_price_data):
         """Test RSI calculation."""
@@ -423,12 +421,6 @@ class TestStrategyIntegration:
     def test_pandas_ta_integration(self, sample_ohlcv_data):
         """Test pandas-ta integration."""
         # This test would require pandas-ta to be installed
-        try:
-            import pandas_ta as ta
-
-            # Test that our utility functions work with pandas-ta
-            sma = calculate_sma(sample_ohlcv_data["close"], 20)
-            assert not sma.isna().all()
-
-        except ImportError:
-            pytest.skip("pandas-ta not available")
+        # Test that our utility functions work with pandas-ta
+        sma = calculate_sma(sample_ohlcv_data["close"], 20)
+        assert not sma.isna().all()

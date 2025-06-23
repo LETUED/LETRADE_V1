@@ -18,7 +18,11 @@ from typing import Any, Dict, List, Optional, Set
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from common.message_bus import MessageBus, MessageRoutes, create_message_bus
+from common.message_bus import (  # noqa: E402
+    MessageBus,
+    MessageRoutes,
+    create_message_bus,
+)
 
 logger = logging.getLogger(__name__)
 

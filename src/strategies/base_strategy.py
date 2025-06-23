@@ -4,7 +4,8 @@ All trading strategies must inherit from BaseStrategy and implement
 the required abstract methods for indicator calculation, signal generation,
 and subscription management.
 
-Designed following the system architecture in docs/design-docs/03_Strategy_Library_and_Implementation.md
+Designed following the system architecture in
+docs/design-docs/03_Strategy_Library_and_Implementation.md
 Integrates with pandas-ta for technical analysis indicators.
 """
 

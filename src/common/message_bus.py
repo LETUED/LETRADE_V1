@@ -8,10 +8,10 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 import aio_pika
-from aio_pika import Connection, Exchange, Message, Queue
+from aio_pika import Exchange, Message, Queue
 from aio_pika.abc import AbstractChannel, AbstractConnection
 
 logger = logging.getLogger(__name__)

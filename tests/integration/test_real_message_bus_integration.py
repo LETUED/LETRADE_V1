@@ -1,19 +1,17 @@
 """실제 RabbitMQ와 연동하는 메시지 버스 통합 테스트.
 
-이 테스트들은 실제 RabbitMQ 서버와 연결하여 목(mock) 없이 
+이 테스트들은 실제 RabbitMQ 서버와 연결하여 목(mock) 없이
 완전한 메시지 흐름을 검증합니다.
 
 CLAUDE.md 요구사항: "mvp를 완료하려면 mock이 없는 상태로 모든 테스트를 통과해야한다"
 """
 
 import asyncio
-import json
 import logging
-import os
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
 import pytest
 import pytest_asyncio
@@ -22,8 +20,8 @@ import pytest_asyncio
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from common.message_bus import MessageBus, MessageRoutes, create_message_bus
-from core_engine.main import CoreEngine
+from common.message_bus import MessageBus, MessageRoutes  # noqa: E402
+from core_engine.main import CoreEngine  # noqa: E402
 
 # 테스트 로깅 설정
 logging.basicConfig(level=logging.DEBUG)

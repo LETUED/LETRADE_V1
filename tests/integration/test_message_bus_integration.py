@@ -11,8 +11,8 @@ import pytest
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from common.message_bus import MessageBus, MessageRoutes
-from core_engine.main import CoreEngine
+from common.message_bus import MessageBus, MessageRoutes  # noqa: E402
+from core_engine.main import CoreEngine  # noqa: E402
 
 
 class TestMessageBusIntegration:
