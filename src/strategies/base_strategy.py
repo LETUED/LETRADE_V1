@@ -24,50 +24,50 @@ logger = logging.getLogger(__name__)
 
 class PerformanceTracker:
     """Real-time performance tracking for strategies.
-    
+
     Tracks execution metrics for strategy optimization and monitoring.
     """
-    
+
     def __init__(self):
         self.signal_count = 0
         self.execution_times = []
         self.memory_usage_history = []
         self.last_update_time = datetime.now(timezone.utc)
         self.start_time = time.time()
-        
+
     def record_signal(self):
         """Record a signal generation event."""
         self.signal_count += 1
         self.last_update_time = datetime.now(timezone.utc)
-    
+
     def record_execution_time(self, execution_time: float):
         """Record execution time for performance monitoring."""
         self.execution_times.append(execution_time)
         # Keep only last 1000 measurements
         if len(self.execution_times) > 1000:
             self.execution_times = self.execution_times[-1000:]
-    
+
     def record_memory_usage(self, memory_mb: float):
         """Record memory usage."""
         self.memory_usage_history.append(memory_mb)
         # Keep only last 100 measurements
         if len(self.memory_usage_history) > 100:
             self.memory_usage_history = self.memory_usage_history[-100:]
-    
+
     @property
     def avg_execution_time(self) -> float:
         """Average execution time in milliseconds."""
         if not self.execution_times:
             return 0.0
         return sum(self.execution_times) / len(self.execution_times) * 1000
-    
+
     @property
     def current_memory_usage(self) -> float:
         """Current memory usage in MB."""
         if not self.memory_usage_history:
             return 0.0
         return self.memory_usage_history[-1]
-    
+
     @property
     def uptime_seconds(self) -> float:
         """Strategy uptime in seconds."""
@@ -87,7 +87,7 @@ class SignalType(Enum):
 @dataclass
 class TradingSignal:
     """Trading signal data structure.
-    
+
     Format follows MVP specification:
     - side: "buy" or "sell"
     - signal_price: Entry price
@@ -104,10 +104,10 @@ class TradingSignal:
     confidence: float = 1.0  # 0.0 to 1.0
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     strategy_params: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert signal to dictionary for Capital Manager request.
-        
+
         Returns format compatible with request.capital.allocation message.
         """
         return {
@@ -193,7 +193,7 @@ class BaseStrategy(ABC):
 
         This method is called whenever new market data is received.
         It should analyze the data and indicators to generate trading signals.
-        
+
         Args:
             data: Latest market data point (tick/candle)
             dataframe: Historical data with populated indicators
@@ -215,7 +215,7 @@ class BaseStrategy(ABC):
     @abstractmethod
     def get_required_subscriptions(self) -> List[str]:
         """Get list of RabbitMQ routing keys this strategy needs to subscribe to.
-        
+
         Should return routing keys in format: ["market_data.{exchange}.{symbol}"]
         Example: ["market_data.binance.btcusdt", "market_data.binance.ethusdt"]
 
@@ -223,35 +223,35 @@ class BaseStrategy(ABC):
             List of RabbitMQ routing key strings
         """
         pass
-    
+
     async def on_data_async(
         self, data: Dict[str, Any], dataframe: pd.DataFrame
     ) -> Optional[Dict[str, Any]]:
         """Asynchronous version of on_data for high-performance strategies.
-        
+
         Default implementation runs the synchronous version in a thread pool.
         Override this method for strategies that need async processing.
-        
+
         Args:
             data: Latest market data point
             dataframe: Historical data with populated indicators
-            
+
         Returns:
             Same format as on_data method
         """
         start_time = time.time()
-        
+
         # Run synchronous version in thread pool
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, self.on_data, data, dataframe)
-        
+
         # Record performance metrics
         execution_time = time.time() - start_time
         self.performance_metrics.record_execution_time(execution_time)
-        
+
         if result:
             self.performance_metrics.record_signal()
-        
+
         return result
 
     def validate_signal(self, signal: TradingSignal) -> bool:
@@ -399,7 +399,7 @@ class BaseStrategy(ABC):
 
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get comprehensive strategy performance metrics.
-        
+
         Includes real-time performance data for monitoring and optimization.
 
         Returns:
@@ -518,6 +518,7 @@ class BaseStrategy(ABC):
 # Utility functions for strategy development with pandas-ta integration
 try:
     import pandas_ta as ta
+
     HAS_PANDAS_TA = True
 except ImportError:
     HAS_PANDAS_TA = False
@@ -542,7 +543,7 @@ def calculate_rsi(data: pd.Series, period: int = 14) -> pd.Series:
     """Calculate Relative Strength Index using pandas-ta if available."""
     if HAS_PANDAS_TA:
         return ta.rsi(data, length=period)
-    
+
     # Fallback implementation
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -562,7 +563,7 @@ def calculate_bollinger_bands(
             "middle": bb[f"BBM_{period}_{std_dev}.0"],
             "lower": bb[f"BBL_{period}_{std_dev}.0"],
         }
-    
+
     # Fallback implementation
     sma = calculate_sma(data, period)
     std = data.rolling(window=period).std()
@@ -584,7 +585,7 @@ def calculate_macd(
             "signal": macd[f"MACDs_{fast}_{slow}_{signal}"],
             "histogram": macd[f"MACDh_{fast}_{slow}_{signal}"],
         }
-    
+
     # Fallback implementation
     ema_fast = calculate_ema(data, fast)
     ema_slow = calculate_ema(data, slow)
@@ -596,20 +597,20 @@ def calculate_macd(
 
 def add_all_indicators(dataframe: pd.DataFrame) -> pd.DataFrame:
     """Add comprehensive set of technical indicators using pandas-ta.
-    
+
     This is a convenience function that adds commonly used indicators.
     Individual strategies should use specific indicators in populate_indicators().
-    
+
     Args:
         dataframe: OHLCV dataframe with columns: open, high, low, close, volume
-        
+
     Returns:
         Dataframe with additional indicator columns
     """
     if not HAS_PANDAS_TA:
         logger.warning("pandas-ta not available, skipping comprehensive indicators")
         return dataframe
-    
+
     # Use pandas-ta strategy for comprehensive analysis
     dataframe.ta.strategy(ta.AllStrategy)
     return dataframe

@@ -10,10 +10,11 @@ import signal
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
 
 # Add path for imports
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -267,20 +268,26 @@ class CoreEngine:
 
         try:
             # Initialize message bus first (other components depend on it)
-            message_bus_config = self.config.get("message_bus", {
-                "host": "localhost",
-                "port": 5672,
-                "username": "guest",
-                "password": "guest",
-                "virtual_host": "/",
-            })
-            
+            message_bus_config = self.config.get(
+                "message_bus",
+                {
+                    "host": "localhost",
+                    "port": 5672,
+                    "username": "guest",
+                    "password": "guest",
+                    "virtual_host": "/",
+                },
+            )
+
             self.message_bus = await create_message_bus(message_bus_config)
-            logger.info("Message bus initialized successfully", extra={"component": "core_engine"})
-            
+            logger.info(
+                "Message bus initialized successfully",
+                extra={"component": "core_engine"},
+            )
+
             # Setup message handlers
             await self._setup_message_handlers()
-            
+
             # TODO: Initialize other components
             # self.strategy_manager = StrategyManager(
             #     self.config.get("strategy_manager", {}),
@@ -296,55 +303,57 @@ class CoreEngine:
             # )
 
             logger.info("Subsystems initialized", extra={"component": "core_engine"})
-            
+
         except Exception as e:
             logger.error(
                 "Failed to initialize subsystems",
-                extra={"component": "core_engine", "error": str(e)}
+                extra={"component": "core_engine", "error": str(e)},
             )
             raise
 
     async def _setup_message_handlers(self):
         """Setup message bus event handlers."""
         if not self.message_bus:
-            logger.warning("Message bus not available for handler setup", extra={"component": "core_engine"})
+            logger.warning(
+                "Message bus not available for handler setup",
+                extra={"component": "core_engine"},
+            )
             return
-        
+
         try:
             # Subscribe to system events
-            await self.message_bus.subscribe(
-                "system_events",
-                self._handle_system_event
+            await self.message_bus.subscribe("system_events", self._handle_system_event)
+
+            logger.info(
+                "Message handlers setup completed", extra={"component": "core_engine"}
             )
-            
-            logger.info("Message handlers setup completed", extra={"component": "core_engine"})
-            
+
         except Exception as e:
             logger.error(
                 "Failed to setup message handlers",
-                extra={"component": "core_engine", "error": str(e)}
+                extra={"component": "core_engine", "error": str(e)},
             )
             raise
 
     async def _handle_system_event(self, message: Dict[str, Any]):
         """Handle system events from message bus.
-        
+
         Args:
             message: System event message
         """
         try:
             routing_key = message.get("routing_key", "")
             payload = message.get("payload", {})
-            
+
             logger.debug(
                 "Processing system event",
                 extra={
                     "component": "core_engine",
                     "routing_key": routing_key,
-                    "payload_keys": list(payload.keys())
-                }
+                    "payload_keys": list(payload.keys()),
+                },
             )
-            
+
             if routing_key == MessageRoutes.SYSTEM_ERROR:
                 await self._handle_system_error(payload)
             elif routing_key == MessageRoutes.TRADE_EXECUTED:
@@ -353,18 +362,18 @@ class CoreEngine:
                 await self._handle_strategy_started(payload)
             elif routing_key == MessageRoutes.STRATEGY_STOPPED:
                 await self._handle_strategy_stopped(payload)
-            
+
         except Exception as e:
             logger.error(
                 "Error handling system event",
-                extra={"component": "core_engine", "error": str(e)}
+                extra={"component": "core_engine", "error": str(e)},
             )
 
     async def _handle_system_error(self, payload: Dict[str, Any]):
         """Handle system error events."""
         logger.error(
             "System error event received",
-            extra={"component": "core_engine", "error_payload": payload}
+            extra={"component": "core_engine", "error_payload": payload},
         )
 
     async def _handle_trade_executed(self, payload: Dict[str, Any]):
@@ -375,8 +384,8 @@ class CoreEngine:
             extra={
                 "component": "core_engine",
                 "total_trades": self.status.total_trades,
-                "trade_info": payload
-            }
+                "trade_info": payload,
+            },
         )
 
     async def _handle_strategy_started(self, payload: Dict[str, Any]):
@@ -389,8 +398,8 @@ class CoreEngine:
                 extra={
                     "component": "core_engine",
                     "strategy_id": strategy_id,
-                    "active_count": len(self.status.active_strategies)
-                }
+                    "active_count": len(self.status.active_strategies),
+                },
             )
 
     async def _handle_strategy_stopped(self, payload: Dict[str, Any]):
@@ -403,8 +412,8 @@ class CoreEngine:
                 extra={
                     "component": "core_engine",
                     "strategy_id": strategy_id,
-                    "active_count": len(self.status.active_strategies)
-                }
+                    "active_count": len(self.status.active_strategies),
+                },
             )
 
     def _setup_signal_handlers(self):
@@ -501,18 +510,22 @@ class CoreEngine:
             #     await self.capital_manager.stop()
             # if self.exchange_connector:
             #     await self.exchange_connector.stop()
-            
+
             # Shutdown message bus last
             if self.message_bus:
                 await self.message_bus.disconnect()
-                logger.info("Message bus disconnected", extra={"component": "core_engine"})
+                logger.info(
+                    "Message bus disconnected", extra={"component": "core_engine"}
+                )
 
-            logger.info("Subsystems shutdown complete", extra={"component": "core_engine"})
-            
+            logger.info(
+                "Subsystems shutdown complete", extra={"component": "core_engine"}
+            )
+
         except Exception as e:
             logger.error(
                 "Error during subsystems shutdown",
-                extra={"component": "core_engine", "error": str(e)}
+                extra={"component": "core_engine", "error": str(e)},
             )
 
     async def _persist_final_state(self):
