@@ -1,0 +1,192 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior
+title: "🐛 [BUG]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report a bug! 🙏
+        
+        Please fill out this form as completely as possible to help us reproduce and fix the issue.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm you have completed these steps
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have checked the documentation for relevant information
+          required: true
+        - label: I am using a supported version of the system
+          required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Bug Severity
+      description: How severe is this bug?
+      options:
+        - "🔴 Critical - System crash, data loss, security vulnerability"
+        - "🟠 High - Major feature broken, significant impact"
+        - "🟡 Medium - Feature partially broken, workaround available" 
+        - "🟢 Low - Minor issue, cosmetic problem"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which component is affected by this bug?
+      options:
+        - "Core Engine"
+        - "Strategy Worker"
+        - "Capital Manager"
+        - "Exchange Connector"
+        - "Database"
+        - "Message Bus (RabbitMQ)"
+        - "CLI Interface"
+        - "Telegram Bot"
+        - "Configuration/Setup"
+        - "Documentation"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: "Describe the bug in detail..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: "Describe what should have happened..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: "Describe what actually happened..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the bug
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Information
+      description: Information about your environment
+      value: |
+        - **OS**: [e.g., macOS 14.0, Ubuntu 20.04]
+        - **Python Version**: [e.g., 3.11.5]
+        - **System Version**: [e.g., v1.0.0]
+        - **Deployment**: [e.g., Local Docker, GCP Cloud Run]
+        - **Browser** (if applicable): [e.g., Chrome 118.0]
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Relevant configuration (remove sensitive information)
+      render: yaml
+      placeholder: |
+        # Example configuration (remove sensitive data)
+        trading:
+          risk_management:
+            max_position_size_percent: 10.0
+            max_daily_loss_percent: 5.0
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Relevant error logs or stack traces
+      render: shell
+      placeholder: |
+        Paste error logs here (remove sensitive information like API keys)
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any additional context about the problem
+      placeholder: |
+        - Screenshots (if applicable)
+        - Related issues or discussions
+        - Potential workarounds
+        - Impact on trading operations
+
+  - type: dropdown
+    id: trading_impact
+    attributes:
+      label: Trading Impact
+      description: Does this bug affect trading operations?
+      options:
+        - "🚨 Critical - Trading stopped/unsafe"
+        - "⚠️ High - Trading accuracy affected"
+        - "📊 Medium - Monitoring/reporting affected"
+        - "💡 Low - Non-trading functionality affected"
+        - "❌ No trading impact"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety_impact
+    attributes:
+      label: Safety Impact Assessment
+      description: Check all that apply
+      options:
+        - label: Could result in financial loss
+        - label: Affects risk management
+        - label: Could expose API keys or sensitive data
+        - label: Affects system stability
+        - label: Could cause incorrect trade execution
+
+  - type: textarea
+    id: financial_impact
+    attributes:
+      label: Financial Impact (Optional)
+      description: If this bug has caused or could cause financial losses, please describe
+      placeholder: |
+        Estimated loss: $X
+        Trades affected: X
+        Time period: X hours/days
+
+  - type: checkboxes
+    id: assistance
+    attributes:
+      label: Contribution
+      description: Would you like to help fix this bug?
+      options:
+        - label: I would like to work on fixing this bug
+        - label: I can provide additional testing
+        - label: I can help with reproduction steps

@@ -1,0 +1,314 @@
+# =============================================================================
+# Release Deployment Workflow
+# =============================================================================
+
+name: Release & Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # =============================================================================
+  # Build & Test
+  # =============================================================================
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      image-tag: ${{ steps.image.outputs.tag }}
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🏷️ Extract version
+      id: version
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+        else
+          VERSION=$(date +%Y%m%d)-${GITHUB_SHA::8}
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+        
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+        
+    - name: 🧪 Run full test suite
+      run: |
+        pytest tests/ \
+          --cov=src \
+          --cov-report=xml \
+          --cov-report=html \
+          --junitxml=pytest.xml \
+          -v
+          
+    - name: 📊 Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results
+        path: |
+          pytest.xml
+          htmlcov/
+          coverage.xml
+
+  # =============================================================================
+  # Build Docker Image
+  # =============================================================================
+  build-image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔐 Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: 🏗️ Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 📝 Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha
+          
+    - name: 🏗️ Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+  # =============================================================================
+  # Create GitHub Release
+  # =============================================================================
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-and-test, build-image]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    permissions:
+      contents: write
+      
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: 📝 Generate changelog
+      id: changelog
+      run: |
+        # Get the previous tag
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+        
+        if [[ -n "$PREV_TAG" ]]; then
+          echo "Generating changelog from $PREV_TAG to ${{ github.ref_name }}"
+          
+          # Generate changelog
+          echo "## 🚀 What's Changed" > changelog.md
+          echo "" >> changelog.md
+          
+          git log --pretty=format:"- %s (@%an)" $PREV_TAG..HEAD \
+            | grep -E "^- (feat|fix|docs|refactor|perf)" \
+            >> changelog.md
+          
+          echo "" >> changelog.md
+          echo "## 📊 Statistics" >> changelog.md
+          echo "- **Commits**: $(git rev-list --count $PREV_TAG..HEAD)" >> changelog.md
+          echo "- **Files Changed**: $(git diff --name-only $PREV_TAG..HEAD | wc -l)" >> changelog.md
+          echo "- **Contributors**: $(git log --format='%an' $PREV_TAG..HEAD | sort -u | wc -l)" >> changelog.md
+          
+        else
+          echo "## 🎉 Initial Release" > changelog.md
+          echo "" >> changelog.md
+          echo "This is the first release of Letrade_v1 automated cryptocurrency trading system." >> changelog.md
+        fi
+        
+        cat changelog.md
+        
+    - name: 🏷️ Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        body_path: changelog.md
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # =============================================================================
+  # Deploy to Staging
+  # =============================================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-and-test, build-image]
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'staging'
+    
+    environment:
+      name: staging
+      url: https://staging.letrade.com
+      
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+        
+    - name: 🚀 Deploy to GCP Cloud Run
+      run: |
+        # Deploy to Cloud Run
+        gcloud run deploy letrade-v1-staging \
+          --image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+          --region=us-central1 \
+          --platform=managed \
+          --allow-unauthenticated \
+          --memory=2Gi \
+          --cpu=2 \
+          --concurrency=100 \
+          --timeout=300 \
+          --set-env-vars="ENVIRONMENT=staging"
+          
+    - name: 🧪 Run smoke tests
+      run: |
+        echo "Running smoke tests against staging environment..."
+        # Add smoke test commands here
+        curl -f https://staging.letrade.com/health || exit 1
+        
+    - name: 📧 Notify deployment
+      if: always()
+      run: |
+        if [[ "${{ job.status }}" == "success" ]]; then
+          echo "✅ Staging deployment successful"
+        else
+          echo "❌ Staging deployment failed"
+        fi
+
+  # =============================================================================
+  # Deploy to Production
+  # =============================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [create-release, deploy-staging]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.environment == 'production'
+    
+    environment:
+      name: production
+      url: https://letrade.com
+      
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: ⏸️ Manual approval checkpoint
+      uses: trstringer/manual-approval@v1
+      if: github.event.inputs.environment == 'production'
+      with:
+        secret: ${{ github.TOKEN }}
+        approvers: ${{ github.repository_owner }}
+        minimum-approvals: 1
+        issue-title: "Production Deployment Approval"
+        issue-body: |
+          Please review and approve the production deployment.
+          
+          **Version**: ${{ needs.build-and-test.outputs.version }}
+          **Image**: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          **Triggered by**: @${{ github.actor }}
+          
+    - name: 🔧 Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+        
+    - name: 🚀 Deploy to Production
+      run: |
+        # Deploy to Cloud Run
+        gcloud run deploy letrade-v1-production \
+          --image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+          --region=us-central1 \
+          --platform=managed \
+          --allow-unauthenticated \
+          --memory=4Gi \
+          --cpu=4 \
+          --concurrency=200 \
+          --timeout=300 \
+          --set-env-vars="ENVIRONMENT=production"
+          
+    - name: 🧪 Run production health checks
+      run: |
+        echo "Running production health checks..."
+        # Add comprehensive health checks here
+        curl -f https://letrade.com/health || exit 1
+        
+    - name: 📊 Update deployment metrics
+      run: |
+        echo "Updating deployment metrics..."
+        # Add metrics collection here
+        
+    - name: 📧 Notify successful deployment
+      if: success()
+      run: |
+        echo "🎉 Production deployment successful!"
+        echo "Version ${{ needs.build-and-test.outputs.version }} is now live."

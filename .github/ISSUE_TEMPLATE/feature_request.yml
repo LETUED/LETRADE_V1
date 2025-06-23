@@ -1,0 +1,248 @@
+name: 🚀 Feature Request
+description: Suggest a new feature or enhancement
+title: "🚀 [FEATURE]: "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a new feature! 🎉
+        
+        Please provide as much detail as possible to help us understand your request.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm you have completed these steps
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have checked the roadmap to see if this is already planned
+          required: true
+        - label: This feature aligns with the project's goals
+          required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: What type of feature is this?
+      options:
+        - "🧠 Trading Strategy - New trading algorithm or strategy"
+        - "📊 Risk Management - Risk assessment or capital management"
+        - "🔌 Exchange Integration - New exchange or trading functionality"
+        - "📱 User Interface - CLI, Telegram bot, or dashboard improvements"
+        - "🔒 Security - Security enhancements or compliance features"
+        - "📈 Analytics - Performance metrics, reporting, or analytics"
+        - "🚀 Performance - Speed, scalability, or optimization improvements"
+        - "🔧 DevOps - Deployment, monitoring, or operational features"
+        - "🤖 AI/ML - Machine learning or artificial intelligence features"
+        - "💰 DeFi/Yield - Staking, lending, or DeFi integrations"
+        - "📚 Documentation - Documentation improvements"
+        - "🧪 Testing - Testing tools or frameworks"
+        - "🔄 Infrastructure - System architecture or core improvements"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Level
+      description: How important is this feature?
+      options:
+        - "🔥 Critical - Essential for system operation"
+        - "🟠 High - Significantly improves functionality"
+        - "🟡 Medium - Nice to have, moderate impact"
+        - "🟢 Low - Minor improvement or convenience feature"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: Brief, clear summary of the proposed feature
+      placeholder: "One-sentence description of the feature..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve?
+      placeholder: |
+        Describe the current limitation or problem:
+        - What is currently difficult or impossible to do?
+        - What pain points does this address?
+        - How does this impact users or the system?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Detailed description of your proposed solution
+      placeholder: |
+        Describe your proposed solution:
+        - How would this feature work?
+        - What would the user experience be?
+        - What components would be involved?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      description: Have you considered any alternative approaches?
+      placeholder: |
+        Describe alternative solutions you've considered:
+        - Other ways to solve the same problem
+        - Why the proposed solution is preferred
+        - Existing workarounds (if any)
+
+  - type: textarea
+    id: use_cases
+    attributes:
+      label: Use Cases
+      description: Specific scenarios where this feature would be useful
+      placeholder: |
+        Example use cases:
+        1. As a trader, I want to...
+        2. When the market is volatile, I need to...
+        3. For risk management, it would be helpful to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: How would you know this feature is complete?
+      placeholder: |
+        The feature is complete when:
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Criterion 3
+
+  - type: dropdown
+    id: trading_impact
+    attributes:
+      label: Trading Impact
+      description: How would this feature affect trading operations?
+      options:
+        - "🚀 Enables new trading strategies"
+        - "📊 Improves trading accuracy/performance"
+        - "🛡️ Enhances risk management"
+        - "⚡ Improves execution speed"
+        - "📱 Improves user experience"
+        - "🔧 Improves system reliability"
+        - "📈 Enables better analysis/reporting"
+        - "❌ No direct trading impact"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: risk_assessment
+    attributes:
+      label: Risk Assessment
+      description: Potential risks or considerations for this feature
+      options:
+        - label: Could affect system stability
+        - label: Might impact performance
+        - label: Could introduce security vulnerabilities
+        - label: May require significant testing
+        - label: Could affect existing functionality
+        - label: Requires external integrations
+        - label: May have regulatory implications
+
+  - type: textarea
+    id: technical_details
+    attributes:
+      label: Technical Considerations
+      description: Technical aspects or constraints to consider
+      placeholder: |
+        Technical details:
+        - Architecture considerations
+        - Performance requirements
+        - Integration points
+        - Data requirements
+        - Security considerations
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups/Examples
+      description: Visual examples, code snippets, or mockups
+      placeholder: |
+        Include:
+        - UI mockups (if applicable)
+        - Code examples
+        - Configuration examples
+        - Screenshots from other tools
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Estimated Complexity
+      description: How complex do you think this feature would be to implement?
+      options:
+        - "🟢 Simple - Few hours to implement"
+        - "🟡 Medium - Few days to implement"
+        - "🟠 Complex - Weeks to implement"
+        - "🔴 Very Complex - Months to implement"
+        - "❓ Uncertain - Need technical analysis"
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: What other features or systems does this depend on?
+      placeholder: |
+        This feature depends on:
+        - Existing feature X
+        - External service Y
+        - Database changes
+        - New libraries/frameworks
+
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Suggested Milestone
+      description: When would you like to see this implemented?
+      options:
+        - "🎯 MVP - Essential for initial release"
+        - "📈 Week 2 - Trading functionality"
+        - "🤖 Week 3 - AI/ML features"
+        - "💰 Week 4 - Advanced features"
+        - "🔮 Future - Post-launch enhancement"
+        - "❓ Flexible - Whenever convenient"
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: How would you like to contribute to this feature?
+      options:
+        - label: I would like to implement this feature
+        - label: I can help with design/planning
+        - label: I can provide testing and feedback
+        - label: I can help with documentation
+        - label: I can provide domain expertise
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: Any other information that would be helpful
+      placeholder: |
+        Additional information:
+        - Links to relevant documentation
+        - Examples from other systems
+        - Research or analysis
+        - Community feedback
