@@ -1,0 +1,269 @@
+# =============================================================================
+# Letrade_v1 .gitignore
+# =============================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+.idea/
+
+# =============================================================================
+# Letrade_v1 특정 설정
+# =============================================================================
+
+# Claude Code 관련 파일 (개발 도구용, 저장소에 포함하지 않음)
+CLAUDE.md
+.cursorrules
+.claude/
+
+# 민감한 설정 파일
+.env
+.env.local
+.env.production
+config/secrets.yaml
+
+# API 키 및 인증서
+*.key
+*.pem
+*.crt
+service-account.json
+google-credentials.json
+
+# 로그 파일
+logs/
+*.log
+*.log.*
+
+# 데이터베이스 파일
+*.db
+*.sqlite
+*.sqlite3
+
+# 임시 파일
+temp/
+tmp/
+*.tmp
+*.temp
+
+# 백업 파일
+*.backup
+*.bak
+
+# 캐시 파일
+.cache/
+*.cache
+
+# 프로파일링 결과
+*.prof
+*.profile
+
+# =============================================================================
+# 개발 도구
+# =============================================================================
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Cursor
+.cursor/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# =============================================================================
+# Docker & 인프라
+# =============================================================================
+
+# Docker
+.dockerignore
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Kubernetes
+*.kubeconfig
+
+# =============================================================================
+# 운영체제
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+
+# =============================================================================
+# 프로젝트 특정
+# =============================================================================
+
+# 테스트 결과
+test-results/
+coverage-reports/
+
+# 빌드 아티팩트
+build/
+dist/
+
+# 설정 오버라이드
+config/local.yaml
+config/development.yaml
+config/production.yaml
+
+# 실험 및 프로토타입
+experiments/
+prototypes/
+sandbox/
+
+# 문서 빌드
+docs/_build/
+docs/site/
+
+# 데이터 파일 (대용량)
+data/
+*.csv
+*.json
+*.parquet
+
+# ML 모델 파일
+models/
+*.pkl
+*.joblib
+*.h5
+*.pb

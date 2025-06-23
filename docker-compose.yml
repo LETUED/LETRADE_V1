@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 데이터베이스
+  postgres:
+    image: postgres:15-alpine
+    container_name: letrade_postgres
+    environment:
+      POSTGRES_DB: letrade_db
+      POSTGRES_USER: letrade_user
+      POSTGRES_PASSWORD: letrade_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U letrade_user -d letrade_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RabbitMQ 메시지 버스
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: letrade_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: letrade_user
+      RABBITMQ_DEFAULT_PASS: letrade_password
+    ports:
+      - "5672:5672"    # AMQP 포트
+      - "15672:15672"  # 관리 UI 포트
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis (캐싱용)
+  redis:
+    image: redis:7-alpine
+    container_name: letrade_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  redis_data:
+
+networks:
+  default:
+    name: letrade_network

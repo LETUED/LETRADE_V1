@@ -1,0 +1,171 @@
+# =============================================================================
+# Letrade_v1 메인 설정 파일
+# =============================================================================
+
+# 시스템 설정
+system:
+  name: "Letrade_v1"
+  version: "0.1.0"
+  timezone: "UTC"
+  startup_timeout: 30
+  shutdown_timeout: 10
+
+# 로깅 설정
+logging:
+  level: "INFO"
+  format: "json"
+  handlers:
+    - type: "console"
+      level: "INFO"
+    - type: "file"
+      level: "DEBUG"
+      filename: "logs/letrade.log"
+      max_bytes: 10485760  # 10MB
+      backup_count: 5
+  loggers:
+    - name: "letrade"
+      level: "INFO"
+    - name: "ccxt"
+      level: "WARNING"
+    - name: "sqlalchemy"
+      level: "WARNING"
+
+# 데이터베이스 설정
+database:
+  pool_size: 20
+  max_overflow: 30
+  pool_pre_ping: true
+  pool_recycle: 3600
+  echo: false
+  
+# 메시지 버스 설정  
+message_bus:
+  exchange_name: "letrade_exchange"
+  exchange_type: "topic"
+  queue_ttl: 3600000  # 1시간
+  message_ttl: 600000  # 10분
+  prefetch_count: 10
+  
+  # 라우팅 키 패턴
+  routing_keys:
+    market_data: "market_data.{exchange}.{symbol}"
+    trade_commands: "commands.execute_trade"
+    capital_requests: "request.capital.allocation.{strategy_id}"
+    system_events: "events.system.{event_type}"
+    trade_events: "events.trade.{event_type}"
+
+# 거래 설정
+trading:
+  # 기본 리스크 관리
+  risk_management:
+    max_position_size_percent: 10.0
+    max_daily_loss_percent: 5.0
+    max_portfolio_exposure_percent: 80.0
+    stop_loss_percent: 2.0
+    
+  # 포지션 사이징
+  position_sizing:
+    default_model: "fixed_fractional"
+    default_risk_percent: 2.0
+    min_position_size_usd: 10.0
+    max_position_size_usd: 10000.0
+    
+  # 실행 설정
+  execution:
+    order_timeout: 30
+    retry_attempts: 3
+    retry_delay: 1.0
+    slippage_tolerance: 0.001
+
+# 전략 설정
+strategies:
+  # 이동평균 교차 전략 기본값
+  ma_crossover:
+    fast_period: 50
+    slow_period: 200
+    min_volume_24h: 1000000  # 최소 24시간 거래량 (USD)
+    
+  # 전략 실행 설정
+  execution:
+    max_concurrent_strategies: 10
+    worker_memory_limit_mb: 256
+    worker_cpu_limit_percent: 50
+    heartbeat_interval: 30
+
+# 거래소 설정
+exchanges:
+  binance:
+    name: "Binance"
+    enabled: true
+    testnet: false
+    rate_limits:
+      requests_per_minute: 1200
+      orders_per_second: 10
+      orders_per_day: 200000
+    features:
+      spot_trading: true
+      futures_trading: false
+      staking: false
+      websocket: true
+    
+  # 향후 추가 거래소
+  # coinbase:
+  #   name: "Coinbase Pro"
+  #   enabled: false
+
+# 모니터링 설정
+monitoring:
+  prometheus:
+    enabled: true
+    port: 8000
+    path: "/metrics"
+    
+  healthcheck:
+    enabled: true
+    port: 8080
+    path: "/health"
+    
+  metrics:
+    - name: "trades_total"
+      type: "counter"
+      description: "Total number of trades executed"
+    - name: "position_pnl"
+      type: "gauge"
+      description: "Current position PnL"
+    - name: "strategy_execution_time"
+      type: "histogram"
+      description: "Strategy execution time"
+
+# 텔레그램 설정
+telegram:
+  enabled: true
+  commands:
+    - "/start"
+    - "/status"
+    - "/portfolio"
+    - "/positions"
+    - "/profit"
+    - "/stop_strategy"
+    - "/help"
+  notifications:
+    trade_executed: true
+    position_opened: true
+    position_closed: true
+    risk_alert: true
+    system_error: true
+
+# 개발 설정
+development:
+  auto_reload: true
+  debug_sql: false
+  mock_exchange: false
+  dry_run: true
+  fast_mode: false
+  
+# 프로덕션 설정
+production:
+  workers: 4
+  max_requests: 1000
+  max_requests_jitter: 100
+  preload_app: true
+  timeout: 30
