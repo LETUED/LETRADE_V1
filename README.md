@@ -168,17 +168,30 @@ flake8 src/ tests/
 ### 테스트 실행
 
 ```bash
+# 실제 인프라 테스트 (MVP 요구사항: mock 없는 테스트)
+docker-compose up -d         # 인프라 시작
+pytest tests/integration/test_real_message_bus_integration.py -v
+
 # 전체 테스트
 pytest
 
 # 특정 테스트 유형
 pytest tests/unit/           # 단위 테스트
-pytest tests/integration/    # 통합 테스트
+pytest tests/integration/    # 통합 테스트 (실제 인프라 연동)
 pytest tests/e2e/           # E2E 테스트
 
 # 커버리지 리포트
 pytest --cov=src --cov-report=html
 ```
+
+#### 실제 인프라 통합 테스트
+
+MVP 완료 기준: **"mock이 없는 상태로 모든 테스트를 통과해야한다"**
+
+- ✅ 실제 RabbitMQ 서버와 연동 테스트
+- ✅ 실제 메시지 발행/소비 검증  
+- ✅ 200ms 미만 거래 지연시간 검증
+- ✅ Core Engine 통합 테스트
 
 ### Git 워크플로우
 
@@ -284,17 +297,27 @@ BINANCE_API_SECRET_PATH=projects/your-project/secrets/binance-api-key
 - **토론**: [GitHub Discussions](https://github.com/your-org/letrade_v1/discussions)
 - **문서**: [Wiki](https://github.com/your-org/letrade_v1/wiki)
 
-## 📈 로드맵
+## 🏁 개발 진행 현황
 
-### Week 1: MVP 핵심 인프라 구축 ✅
-- [x] 시스템 아키텍처 설계
-- [x] 개발 환경 구축
-- [ ] 핵심 서비스 스켈레톤 구현
+### 📊 전체 진행률: 30% ▓▓▓▓▓▓░░░░░░░░░░░░░░ (8/30일 완료)
 
-### Week 2: MVP 거래 기능 완성
-- [ ] 이동평균 교차 전략 구현
-- [ ] Capital Manager 구현
-- [ ] 실시간 거래 실행
+### Week 1: 인프라 구축 ✅ 완료
+- [x] 시스템 아키텍처 설계 (Day 1-2)
+- [x] 개발 환경 구축 (Day 3-4)
+- [x] 핵심 서비스 스켈레톤 (Day 5-6)
+- [x] 메시지 버스 통합 (Day 7)
+
+### Week 2: MVP 거래 기능 🔄 진행 중
+- [x] BaseStrategy 추상 클래스 (Day 8) ✅
+  - 성능 추적 시스템 포함
+  - pandas-ta 라이브러리 통합
+  - 실제 인프라 테스트 100% 통과
+- [ ] MA Crossover 전략 구현 (Day 9) 📅
+- [ ] Strategy Worker 프로세스 격리 (Day 10)
+- [ ] Capital Manager 구현 (Day 11)
+- [ ] Exchange Connector 최적화 (Day 12)
+- [ ] 상태 조정 프로토콜 (Day 13)
+- [ ] MVP 통합 테스트 (Day 14)
 
 ### Week 3: AI/ML 전략 개발
 - [ ] 강화학습 환경 구축

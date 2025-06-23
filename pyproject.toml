@@ -24,6 +24,7 @@ dependencies = [
     # 핵심 라이브러리
     "ccxt>=4.0.0",              # 거래소 API 통합
     "pandas>=2.0.0",            # 데이터 처리
+    "pandas-ta>=0.3.14b",       # 기술적 분석 지표
     "numpy>=1.24.0",            # 수치 계산
     "sqlalchemy>=2.0.0",        # ORM
     "alembic>=1.12.0",          # 데이터베이스 마이그레이션
@@ -108,6 +109,31 @@ bot-cli = "src.cli.bot_cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=src",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+]
+asyncio_mode = "strict"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "performance: marks tests as performance tests",
+    "e2e: End-to-end tests",
+    "database: Database integration tests",
+    "messagebus: Message bus integration tests"
+]
+
 [tool.black]
 line-length = 88
 target-version = ['py311']
@@ -130,22 +156,6 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-addopts = [
-    "--cov=src",
-    "--cov-report=html",
-    "--cov-report=term-missing",
-    "--strict-markers",
-    "-v"
-]
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests", 
-    "e2e: End-to-end tests",
-    "slow: Slow running tests"
-]
 
 [tool.coverage.run]
 source = ["src"]

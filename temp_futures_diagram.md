@@ -1,3 +1,6 @@
+# 선물 거래 및 레버리지 관리 시퀀스 다이어그램
+
+```mermaid
 sequenceDiagram
     %% Futures Trading and Leverage Management Flow
     participant MarketData
@@ -152,7 +155,6 @@ sequenceDiagram
             FuturesConnector->>Exchange: Buy Spot
         end
         
-        
         Exchange-->>FuturesConnector: Hedge Executed
         FuturesConnector->>FuturesStrategy: Delta Neutral Achieved
     end
@@ -164,3 +166,4 @@ sequenceDiagram
         FuturesConnector->>CapitalManager: Update Capital
         CapitalManager->>RiskManager: Recalculate Limits
     end
+```
