@@ -101,6 +101,8 @@ jobs:
         pip install -e ".[dev]"
         
     - name: 🧪 Run unit tests
+      env:
+        PYTHONPATH: ${{ github.workspace }}/src
       run: |
         pytest tests/unit/ \
           --cov=src \
