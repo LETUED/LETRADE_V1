@@ -9,7 +9,7 @@ import logging
 import signal
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add path for imports
 from pathlib import Path
@@ -106,7 +106,7 @@ class CoreEngine:
 
             # 6. Mark system as running
             self.status.is_running = True
-            self.status.start_time = datetime.utcnow()
+            self.status.start_time = datetime.now(timezone.utc)
 
             logger.info(
                 "Core Engine started successfully",
@@ -159,7 +159,7 @@ class CoreEngine:
                 extra={
                     "component": "core_engine",
                     "uptime_seconds": (
-                        (datetime.utcnow() - self.status.start_time).total_seconds()
+                        (datetime.now(timezone.utc) - self.status.start_time).total_seconds()
                         if self.status.start_time
                         else 0
                     ),
@@ -183,7 +183,7 @@ class CoreEngine:
         """
         uptime = None
         if self.status.start_time and self.status.is_running:
-            uptime = (datetime.utcnow() - self.status.start_time).total_seconds()
+            uptime = (datetime.now(timezone.utc) - self.status.start_time).total_seconds()
 
         return {
             "is_running": self.status.is_running,
@@ -210,7 +210,7 @@ class CoreEngine:
         """
         health_results = {
             "core_engine": True,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
         }
 
@@ -463,7 +463,7 @@ class CoreEngine:
             # - Resolve any discrepancies
             # - Update position tracking
 
-            self.status.last_reconciliation = datetime.utcnow()
+            self.status.last_reconciliation = datetime.now(timezone.utc)
             logger.info(
                 "Startup reconciliation completed", extra={"component": "core_engine"}
             )
