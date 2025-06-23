@@ -1,3 +1,6 @@
+# 선물 거래 및 레버리지 관리 시퀀스 다이어그램
+
+```mermaid
 sequenceDiagram
     %% Futures Trading and Leverage Management Flow
     participant MarketData
@@ -42,11 +45,11 @@ sequenceDiagram
         
         par Risk Validations
             RiskManager->>RiskManager: Check Max Leverage
-            and
+        and
             RiskManager->>RiskManager: Portfolio Exposure
-            and
+        and
             RiskManager->>RiskManager: Correlation Risk
-            and
+        and
             RiskManager->>RiskManager: Liquidation Buffer
         end
         
@@ -82,7 +85,7 @@ sequenceDiagram
                     alt Order Filled
                         FuturesConnector->>FuturesStrategy: Fill Notification
                         break
-                    else Timeout
+                    else Order Timeout
                         FuturesConnector->>Exchange: Cancel Order
                         break
                     end
@@ -148,10 +151,9 @@ sequenceDiagram
         
         par Hedging Strategy
             FuturesConnector->>Exchange: Short Futures
-            and
+        and
             FuturesConnector->>Exchange: Buy Spot
         end
-        
         
         Exchange-->>FuturesConnector: Hedge Executed
         FuturesConnector->>FuturesStrategy: Delta Neutral Achieved
@@ -164,3 +166,4 @@ sequenceDiagram
         FuturesConnector->>CapitalManager: Update Capital
         CapitalManager->>RiskManager: Recalculate Limits
     end
+```

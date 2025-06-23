@@ -164,7 +164,7 @@ class MessageBus:
         await self._declare_queue(
             "capital_requests",
             exchange_name="letrade.requests",
-            routing_key="request.capital.*",
+            routing_key="request.capital.#",  # # 와일드카드로 변경하여 하위 레벨 매칭
             durable=True
         )
         
@@ -411,8 +411,7 @@ class MessageBus:
                         else:
                             callback(message_data)
                         
-                        if not auto_ack:
-                            message.ack()
+                        # Message will be automatically acked by context manager
                             
                     except Exception as e:
                         logger.error(
@@ -423,7 +422,8 @@ class MessageBus:
                                 "error": str(e)
                             }
                         )
-                        message.reject(requeue=False)  # Send to DLX
+                        # Message will be automatically rejected by context manager
+                        raise  # Re-raise to trigger reject behavior
             
             # Start consuming
             await queue.consume(message_handler, no_ack=auto_ack)
@@ -443,8 +443,12 @@ class MessageBus:
                 extra={
                     "component": "message_bus",
                     "queue": queue_name,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                    "connected": self.is_connected,
+                    "channel_available": self.channel is not None,
+                    "queue_exists": queue_name in self.queues
+                },
+                exc_info=True
             )
             return False
 

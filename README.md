@@ -168,17 +168,30 @@ flake8 src/ tests/
 ### 테스트 실행
 
 ```bash
+# 실제 인프라 테스트 (MVP 요구사항: mock 없는 테스트)
+docker-compose up -d         # 인프라 시작
+pytest tests/integration/test_real_message_bus_integration.py -v
+
 # 전체 테스트
 pytest
 
 # 특정 테스트 유형
 pytest tests/unit/           # 단위 테스트
-pytest tests/integration/    # 통합 테스트
+pytest tests/integration/    # 통합 테스트 (실제 인프라 연동)
 pytest tests/e2e/           # E2E 테스트
 
 # 커버리지 리포트
 pytest --cov=src --cov-report=html
 ```
+
+#### 실제 인프라 통합 테스트
+
+MVP 완료 기준: **"mock이 없는 상태로 모든 테스트를 통과해야한다"**
+
+- ✅ 실제 RabbitMQ 서버와 연동 테스트
+- ✅ 실제 메시지 발행/소비 검증  
+- ✅ 200ms 미만 거래 지연시간 검증
+- ✅ Core Engine 통합 테스트
 
 ### Git 워크플로우
 
