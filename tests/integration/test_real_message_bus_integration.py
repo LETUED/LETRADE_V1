@@ -8,17 +8,11 @@ CLAUDE.md 요구사항: "mvp를 완료하려면 mock이 없는 상태로 모든 
 
 import asyncio
 import logging
-import sys
 import time
-from pathlib import Path
 from typing import Dict
 
 import pytest
 import pytest_asyncio
-
-# Add src to path for imports
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root / "src"))
 
 from common.message_bus import MessageBus, MessageRoutes  # noqa: E402
 from core_engine.main import CoreEngine  # noqa: E402

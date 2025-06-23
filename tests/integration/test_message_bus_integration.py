@@ -1,15 +1,9 @@
 """Integration tests for Message Bus with Core Engine."""
 
 import asyncio
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
-# Add src to path for imports
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root / "src"))
 
 from common.message_bus import MessageBus, MessageRoutes  # noqa: E402
 from core_engine.main import CoreEngine  # noqa: E402
