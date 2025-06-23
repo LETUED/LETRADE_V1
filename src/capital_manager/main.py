@@ -13,12 +13,18 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from decimal import Decimal
+from contextlib import contextmanager
 
 # Add path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from common.message_bus import MessageBus, create_message_bus  # noqa: E402
+from common.database import (  # noqa: E402
+    Portfolio, PortfolioRule, Strategy, Trade, Position, 
+    db_manager, SystemLog
+)
 
 logger = logging.getLogger(__name__)
 
@@ -203,12 +209,18 @@ class CapitalManager:
         # Circuit breakers
         self._max_daily_loss_triggered = False
         self._emergency_stop = False
+        
+        # Database integration for MVP state reconciliation
+        self._portfolio_id = self.config.get('portfolio_id', 1)  # Default portfolio
+        self._portfolio_rules_cache = {}  # Cache for portfolio rules
+        self._db_connected = False
 
         logger.info(
             "Capital Manager initialized",
             extra={
                 "component": "capital_manager",
                 "risk_params": self.risk_params.to_dict(),
+                "portfolio_id": self._portfolio_id,
             },
         )
 
@@ -222,6 +234,12 @@ class CapitalManager:
             logger.info(
                 "Starting Capital Manager", extra={"component": "capital_manager"}
             )
+
+            # Initialize database connection and load state
+            await self._initialize_database_connection()
+            
+            # Load portfolio rules and state from database
+            await self._load_portfolio_state_from_db()
 
             # Initialize portfolio metrics
             await self._initialize_portfolio_state()
@@ -442,6 +460,21 @@ class CapitalManager:
                 },
             )
 
+            # Save trade validation result to database
+            self.save_trade_to_db(trade_request, response)
+            
+            # Log risk event if rejected
+            if response.result != ValidationResult.APPROVED:
+                self.log_risk_event_to_db(
+                    "trade_rejected",
+                    {
+                        "strategy_id": trade_request.strategy_id,
+                        "symbol": trade_request.symbol,
+                        "reasons": response.reasons,
+                        "risk_level": response.risk_level.value
+                    }
+                )
+
             return response
 
         except Exception as e:
@@ -492,6 +525,17 @@ class CapitalManager:
             # Update daily P&L if trade is filled
             if execution_result.get("status") == "filled":
                 await self._update_daily_pnl(trade_record)
+
+            # Update position in database
+            position_data = {
+                'strategy_id': trade_request.strategy_id,
+                'side': trade_request.side,
+                'size': execution_result.get("filled_quantity", 0),
+                'entry_price': execution_result.get("average_price", trade_request.price),
+                'unrealized_pnl': 0,  # Will be updated by market data
+                'realized_pnl': 0
+            }
+            self.update_position_in_db(trade_request.symbol, position_data)
 
             logger.info(
                 "Trade execution recorded",
@@ -953,6 +997,221 @@ class CapitalManager:
                     "error": str(e)
                 }
             )
+    
+    async def _initialize_database_connection(self) -> None:
+        """Initialize database connection for MVP state reconciliation."""
+        try:
+            # Ensure database manager is connected
+            if not db_manager.engine:
+                db_manager.connect()
+            
+            self._db_connected = True
+            logger.info("Database connection initialized for Capital Manager")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize database connection: {e}")
+            self._db_connected = False
+    
+    async def _load_portfolio_state_from_db(self) -> None:
+        """Load portfolio rules and state from database.
+        
+        Critical for MVP state reconciliation requirements.
+        """
+        try:
+            if not self._db_connected:
+                logger.warning("Database not connected, skipping state load")
+                return
+                
+            with self._get_db_session() as session:
+                # Load portfolio
+                portfolio = session.query(Portfolio).filter_by(id=self._portfolio_id).first()
+                if not portfolio:
+                    logger.warning(f"Portfolio {self._portfolio_id} not found in database")
+                    return
+                
+                # Load portfolio rules
+                rules = session.query(PortfolioRule)\
+                    .filter_by(portfolio_id=self._portfolio_id, is_active=True)\
+                    .all()
+                
+                # Update risk parameters from database rules
+                for rule in rules:
+                    rule_value = rule.rule_value.get('value', 0) if rule.rule_value else 0
+                    
+                    if rule.rule_type == 'max_position_size_percent':
+                        self.risk_params.max_position_size_percent = rule_value
+                    elif rule.rule_type == 'max_daily_loss_percent':
+                        self.risk_params.max_daily_loss_percent = rule_value
+                    elif rule.rule_type == 'max_portfolio_exposure_percent':
+                        self.risk_params.max_portfolio_risk_percent = rule_value
+                    elif rule.rule_type == 'min_position_size_usd':
+                        # Store for validation later
+                        self._portfolio_rules_cache[rule.rule_type] = rule_value
+                    elif rule.rule_type == 'blacklisted_symbols':
+                        # Update blocked symbols
+                        blocked_symbols = rule.rule_value.get('symbols', [])
+                        self._blocked_symbols.update(blocked_symbols)
+                
+                # Load current positions from database
+                positions = session.query(Position)\
+                    .join(Strategy)\
+                    .filter(Strategy.portfolio_id == self._portfolio_id, Position.is_open == True)\
+                    .all()
+                
+                for position in positions:
+                    position_data = {
+                        'strategy_id': position.strategy_id,
+                        'side': position.side,
+                        'size': float(position.current_size),
+                        'entry_price': float(position.entry_price),
+                        'unrealized_pnl': float(position.unrealized_pnl),
+                        'realized_pnl': float(position.realized_pnl)
+                    }
+                    self._positions[position.symbol] = position_data
+                
+                logger.info(
+                    f"Loaded portfolio state from database",
+                    extra={
+                        "portfolio_id": self._portfolio_id,
+                        "rules_loaded": len(rules),
+                        "positions_loaded": len(positions),
+                        "blocked_symbols": len(self._blocked_symbols)
+                    }
+                )
+                
+        except Exception as e:
+            logger.error(f"Failed to load portfolio state from database: {e}")
+    
+    def save_trade_to_db(self, trade_request: TradeRequest, validation_result: ValidationResponse) -> None:
+        """Save trade record to database.
+        
+        Args:
+            trade_request: Original trade request
+            validation_result: Validation result
+        """
+        try:
+            if not self._db_connected:
+                logger.warning("Database not connected, skipping trade save")
+                return
+                
+            with self._get_db_session() as session:
+                # Get strategy
+                strategy = session.query(Strategy).filter_by(id=trade_request.strategy_id).first()
+                if not strategy:
+                    logger.warning(f"Strategy {trade_request.strategy_id} not found")
+                    return
+                
+                # Create trade record
+                trade = Trade(
+                    strategy_id=trade_request.strategy_id,
+                    exchange=strategy.exchange,
+                    symbol=trade_request.symbol,
+                    side=trade_request.side,
+                    type='market',  # Default to market for now
+                    amount=Decimal(str(trade_request.quantity)),
+                    price=Decimal(str(trade_request.price)) if trade_request.price else None,
+                    status='pending' if validation_result.result == ValidationResult.APPROVED else 'rejected',
+                    error_message=validation_result.reasons[0] if validation_result.result != ValidationResult.APPROVED and validation_result.reasons else None
+                )
+                
+                session.add(trade)
+                session.commit()
+                
+                logger.info(
+                    f"Trade saved to database",
+                    extra={
+                        "trade_id": trade.id,
+                        "strategy_id": trade_request.strategy_id,
+                        "symbol": trade_request.symbol,
+                        "status": trade.status
+                    }
+                )
+                
+        except Exception as e:
+            logger.error(f"Failed to save trade to database: {e}")
+    
+    def update_position_in_db(self, symbol: str, position_data: Dict[str, Any]) -> None:
+        """Update position in database.
+        
+        Args:
+            symbol: Trading symbol
+            position_data: Position information
+        """
+        try:
+            if not self._db_connected:
+                return
+                
+            with self._get_db_session() as session:
+                # Find existing position
+                position = session.query(Position)\
+                    .filter_by(
+                        strategy_id=position_data['strategy_id'],
+                        symbol=symbol,
+                        is_open=True
+                    ).first()
+                
+                if position:
+                    # Update existing position
+                    position.current_size = Decimal(str(position_data['size']))
+                    position.unrealized_pnl = Decimal(str(position_data.get('unrealized_pnl', 0)))
+                    position.realized_pnl = Decimal(str(position_data.get('realized_pnl', 0)))
+                else:
+                    # Create new position
+                    position = Position(
+                        strategy_id=position_data['strategy_id'],
+                        exchange='binance',  # Default for now
+                        symbol=symbol,
+                        side=position_data['side'],
+                        entry_price=Decimal(str(position_data['entry_price'])),
+                        current_size=Decimal(str(position_data['size'])),
+                        avg_entry_price=Decimal(str(position_data['entry_price'])),
+                        unrealized_pnl=Decimal(str(position_data.get('unrealized_pnl', 0))),
+                        realized_pnl=Decimal(str(position_data.get('realized_pnl', 0)))
+                    )
+                    session.add(position)
+                
+                session.commit()
+                
+        except Exception as e:
+            logger.error(f"Failed to update position in database: {e}")
+    
+    def log_risk_event_to_db(self, event_type: str, details: Dict[str, Any]) -> None:
+        """Log risk management event to database.
+        
+        Args:
+            event_type: Type of risk event
+            details: Event details
+        """
+        try:
+            if not self._db_connected:
+                return
+                
+            with self._get_db_session() as session:
+                log_entry = SystemLog(
+                    level="WARNING" if "rejected" in event_type.lower() else "INFO",
+                    logger_name="capital_manager.risk",
+                    message=f"Risk event: {event_type}",
+                    context=details,
+                    strategy_id=details.get('strategy_id')
+                )
+                
+                session.add(log_entry)
+                session.commit()
+                
+        except Exception as e:
+            logger.error(f"Failed to log risk event: {e}")
+    
+    @contextmanager
+    def _get_db_session(self):
+        """Get database session with proper cleanup."""
+        session = db_manager.get_session()
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
 
 async def main():

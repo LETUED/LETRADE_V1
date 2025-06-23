@@ -17,8 +17,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from contextlib import contextmanager
 
 import pandas as pd
+
+from ..common.database import Strategy, PerformanceMetric, db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +30,27 @@ class PerformanceTracker:
     """Real-time performance tracking for strategies.
 
     Tracks execution metrics for strategy optimization and monitoring.
+    Enhanced with database persistence for MVP state management requirements.
     """
 
-    def __init__(self):
+    def __init__(self, strategy_id: Optional[int] = None):
+        self.strategy_id = strategy_id
         self.signal_count = 0
         self.execution_times = []
         self.memory_usage_history = []
         self.last_update_time = datetime.now(timezone.utc)
         self.start_time = time.time()
+        
+        # Performance metrics for database storage
+        self._metrics_buffer = {
+            'total_return_percent': 0.0,
+            'sharpe_ratio': 0.0,
+            'max_drawdown_percent': 0.0,
+            'win_rate_percent': 0.0,
+            'profit_factor': 0.0,
+            'total_trades': 0,
+            'avg_trade_duration_hours': 0.0
+        }
 
     def record_signal(self):
         """Record a signal generation event."""
@@ -73,6 +89,89 @@ class PerformanceTracker:
     def uptime_seconds(self) -> float:
         """Strategy uptime in seconds."""
         return time.time() - self.start_time
+    
+    def update_metric(self, metric_name: str, value: float) -> None:
+        """Update a performance metric value."""
+        if metric_name in self._metrics_buffer:
+            self._metrics_buffer[metric_name] = value
+            logger.debug(f"Updated metric {metric_name}: {value}")
+    
+    def save_metrics_to_db(self) -> None:
+        """Save current performance metrics to database."""
+        if not self.strategy_id:
+            logger.warning("Cannot save metrics: strategy_id not set")
+            return
+            
+        try:
+            with self._get_db_session() as session:
+                for metric_name, value in self._metrics_buffer.items():
+                    metric = PerformanceMetric(
+                        strategy_id=self.strategy_id,
+                        metric_name=metric_name,
+                        metric_value=value,
+                        metric_unit=self._get_metric_unit(metric_name)
+                    )
+                    session.add(metric)
+                
+                session.commit()
+                logger.info(f"Saved {len(self._metrics_buffer)} performance metrics to database")
+                
+        except Exception as e:
+            logger.error(f"Failed to save performance metrics: {e}")
+    
+    def load_latest_metrics_from_db(self) -> Dict[str, float]:
+        """Load latest performance metrics from database."""
+        if not self.strategy_id:
+            logger.warning("Cannot load metrics: strategy_id not set")
+            return {}
+            
+        try:
+            with self._get_db_session() as session:
+                # Get latest metric for each type
+                latest_metrics = {}
+                for metric_name in self._metrics_buffer.keys():
+                    latest_metric = session.query(PerformanceMetric)\
+                        .filter_by(strategy_id=self.strategy_id, metric_name=metric_name)\
+                        .order_by(PerformanceMetric.timestamp.desc())\
+                        .first()
+                    
+                    if latest_metric:
+                        latest_metrics[metric_name] = float(latest_metric.metric_value)
+                
+                # Update local buffer
+                self._metrics_buffer.update(latest_metrics)
+                
+                logger.info(f"Loaded {len(latest_metrics)} performance metrics from database")
+                return latest_metrics
+                
+        except Exception as e:
+            logger.error(f"Failed to load performance metrics: {e}")
+            return {}
+    
+    def _get_metric_unit(self, metric_name: str) -> Optional[str]:
+        """Get appropriate unit for metric."""
+        unit_map = {
+            'total_return_percent': 'percent',
+            'max_drawdown_percent': 'percent', 
+            'win_rate_percent': 'percent',
+            'total_trades': 'count',
+            'avg_trade_duration_hours': 'hours',
+            'sharpe_ratio': 'ratio',
+            'profit_factor': 'ratio'
+        }
+        return unit_map.get(metric_name)
+    
+    @contextmanager
+    def _get_db_session(self):
+        """Get database session with proper cleanup."""
+        session = db_manager.get_session()
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
 
 class SignalType(Enum):
@@ -156,11 +255,15 @@ class BaseStrategy(ABC):
         self._position_tracker = {}
         self._last_signal_time = None
 
-        # Performance tracking with enhanced metrics
-        self.performance_metrics = PerformanceTracker()
+        # Performance tracking with enhanced metrics and DB integration
+        self.performance_metrics = PerformanceTracker(strategy_id=config.strategy_id)
         self.total_signals = 0
         self.successful_trades = 0
         self.failed_trades = 0
+        
+        # Database integration for state persistence
+        self._db_strategy_id = config.strategy_id  # Database strategy ID
+        self._state_loaded = False
 
         logger.info(
             f"Strategy {self.strategy_id} initialized",
@@ -577,6 +680,120 @@ class BaseStrategy(ABC):
                 "metadata": metadata or {},
             },
         )
+    
+    def save_state_to_db(self) -> bool:
+        """Save current strategy state to database.
+        
+        Critical for MVP state reconciliation requirements.
+        Saves performance metrics and internal state for recovery after restarts.
+        
+        Returns:
+            bool: True if save successful, False otherwise
+        """
+        try:
+            # Save performance metrics
+            self.performance_metrics.save_metrics_to_db()
+            
+            # Update strategy statistics in database
+            if self._db_strategy_id:
+                with self._get_db_session() as session:
+                    strategy = session.query(Strategy).filter_by(id=self._db_strategy_id).first()
+                    if strategy:
+                        # Update strategy parameters with current state
+                        current_state = {
+                            'total_signals': self.total_signals,
+                            'successful_trades': self.successful_trades,
+                            'failed_trades': self.failed_trades,
+                            'last_signal_time': self._last_signal_time.isoformat() if self._last_signal_time else None,
+                            'position_tracker': self._position_tracker
+                        }
+                        
+                        # Merge with existing parameters
+                        if strategy.parameters:
+                            strategy.parameters.update({'internal_state': current_state})
+                        else:
+                            strategy.parameters = {'internal_state': current_state}
+                        
+                        session.commit()
+                        logger.info(f"Strategy {self.strategy_id} state saved to database")
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to save strategy state: {e}")
+            return False
+    
+    def load_state_from_db(self) -> bool:
+        """Load strategy state from database.
+        
+        Critical for MVP state reconciliation requirements.
+        Restores performance metrics and internal state after system restarts.
+        
+        Returns:
+            bool: True if load successful, False otherwise
+        """
+        try:
+            if not self._db_strategy_id:
+                logger.warning("Cannot load state: database strategy ID not set")
+                return False
+                
+            # Load performance metrics
+            self.performance_metrics.load_latest_metrics_from_db()
+            
+            # Load strategy state from database
+            with self._get_db_session() as session:
+                strategy = session.query(Strategy).filter_by(id=self._db_strategy_id).first()
+                if strategy and strategy.parameters:
+                    internal_state = strategy.parameters.get('internal_state', {})
+                    
+                    # Restore internal state
+                    self.total_signals = internal_state.get('total_signals', 0)
+                    self.successful_trades = internal_state.get('successful_trades', 0)
+                    self.failed_trades = internal_state.get('failed_trades', 0)
+                    
+                    # Restore last signal time
+                    last_signal_str = internal_state.get('last_signal_time')
+                    if last_signal_str:
+                        try:
+                            self._last_signal_time = datetime.fromisoformat(last_signal_str.replace('Z', '+00:00'))
+                        except ValueError:
+                            logger.warning("Invalid last_signal_time format in database")
+                    
+                    # Restore position tracker
+                    self._position_tracker = internal_state.get('position_tracker', {})
+                    
+                    self._state_loaded = True
+                    logger.info(f"Strategy {self.strategy_id} state loaded from database")
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to load strategy state: {e}")
+            return False
+    
+    def ensure_state_loaded(self) -> None:
+        """Ensure strategy state is loaded from database.
+        
+        Called automatically before strategy execution to implement
+        MVP state reconciliation requirements.
+        """
+        if not self._state_loaded and self._db_strategy_id:
+            logger.info(f"Loading strategy {self.strategy_id} state from database...")
+            self.load_state_from_db()
+    
+    @contextmanager 
+    def _get_db_session(self):
+        """Get database session with proper cleanup."""
+        session = db_manager.get_session()
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
 
 # Utility functions for strategy development with pandas-ta integration
