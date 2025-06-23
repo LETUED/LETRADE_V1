@@ -8,7 +8,7 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from src.strategies.base_strategy import (
+from strategies.base_strategy import (
     BaseStrategy,
     PerformanceTracker,
     StrategyConfig,

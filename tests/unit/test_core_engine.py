@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from core_engine.main import CoreEngine, SystemStatus  # noqa: E402
+from core_engine.main import CoreEngine, SystemStatus
 
 
 class TestCoreEngine:

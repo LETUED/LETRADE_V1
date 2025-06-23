@@ -106,7 +106,6 @@ jobs:
         
     - name: 🧪 Run unit tests
       run: |
-        export PYTHONPATH="${PYTHONPATH}:${PWD}/src"
         python -m pytest tests/unit/ \
           --cov=src \
           --cov-report=xml \
@@ -209,7 +208,6 @@ jobs:
         DATABASE_URL: postgresql://letrade_user:letrade_password@localhost:5432/letrade_test_db
         RABBITMQ_URL: amqp://letrade_user:letrade_password@localhost:5672/
         REDIS_URL: redis://localhost:6379/0
-        PYTHONPATH: "${PYTHONPATH}:${PWD}/src"
       run: |
         python -m pytest tests/integration/ \
           --cov=src \

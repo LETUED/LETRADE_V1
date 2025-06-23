@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from common.message_bus import MessageBus, MessageRoutes  # noqa: E402
-from core_engine.main import CoreEngine  # noqa: E402
+from common.message_bus import MessageBus, MessageRoutes
+from core_engine.main import CoreEngine
 
 
 class TestMessageBusIntegration:

@@ -14,8 +14,8 @@ from typing import Dict
 import pytest
 import pytest_asyncio
 
-from common.message_bus import MessageBus, MessageRoutes  # noqa: E402
-from core_engine.main import CoreEngine  # noqa: E402
+from common.message_bus import MessageBus, MessageRoutes
+from core_engine.main import CoreEngine
 
 # 테스트 로깅 설정
 logging.basicConfig(level=logging.DEBUG)

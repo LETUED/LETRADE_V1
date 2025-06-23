@@ -4,11 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from common.message_bus import (  # noqa: E402
-    MessageBus,
-    MessageRoutes,
-    create_message_bus,
-)
+from common.message_bus import MessageBus, MessageRoutes, create_message_bus
 
 
 class TestMessageBus:
