@@ -1,11 +1,17 @@
 """Unit tests for Core Engine module."""
 
 import asyncio
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from src.core_engine.main import CoreEngine, SystemStatus
+# Add src to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / "src"))
+
+from core_engine.main import CoreEngine, SystemStatus
 
 
 class TestCoreEngine:
