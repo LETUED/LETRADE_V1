@@ -712,7 +712,7 @@ async def main():
             validation_response = await capital_manager.validate_trade(trade_request)
             logger.info(
                 "Trade validation: %s",
-                json.dumps(validation_response.to_dict(), indent=2)
+                json.dumps(validation_response.to_dict(), indent=2),
             )
 
             # Test health check

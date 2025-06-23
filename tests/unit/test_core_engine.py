@@ -262,6 +262,7 @@ class TestCoreEnginePerformance:
 
         # Test should complete within reasonable time
         import time
+
         start_time = time.time()
         result = await startup_test()
         duration = time.time() - start_time

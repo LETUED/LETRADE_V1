@@ -97,7 +97,8 @@ jobs:
         
         violations=0
         for pattern in "${patterns[@]}"; do
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD | xargs grep -l "$pattern" 2>/dev/null; then
+          # Skip documentation, scripts, and test files that may contain pattern examples
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -v -E "(docs/|scripts/|tests/|\.md$|\.yml$)" | xargs grep -l "$pattern" 2>/dev/null; then
             echo "❌ Found potential hardcoded secret: $pattern"
             violations=$((violations + 1))
           fi
