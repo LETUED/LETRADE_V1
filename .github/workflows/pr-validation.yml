@@ -49,13 +49,18 @@ jobs:
         
     - name: 📝 Check PR Description
       run: |
-        body="${{ github.event.pull_request.body }}"
-        if [[ ${#body} -lt 50 ]]; then
+        # PR body를 파일로 저장하여 특수 문자 문제 해결
+        cat > pr_body.txt << 'EOF'
+        ${{ github.event.pull_request.body }}
+        EOF
+        
+        body_length=$(wc -c < pr_body.txt)
+        if [[ $body_length -lt 50 ]]; then
           echo "❌ PR description must be at least 50 characters"
-          echo "Current length: ${#body}"
+          echo "Current length: $body_length"
           exit 1
         fi
-        echo "✅ PR description length is adequate"
+        echo "✅ PR description length is adequate ($body_length characters)"
         
     - name: 🏷️ Check Labels
       run: |

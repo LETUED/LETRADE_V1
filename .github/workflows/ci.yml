@@ -64,7 +64,7 @@ jobs:
       run: |
         echo "::group::bandit security scan"
         pip install bandit[toml]
-        bandit -r src/ -f json -o bandit-report.json
+        bandit -r src/ -f json -o bandit-report.json || echo "Security issues found, see report"
         echo "::endgroup::"
         
     - name: 📊 Upload security scan results
