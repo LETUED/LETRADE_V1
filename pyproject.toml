@@ -119,6 +119,9 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
+    "--cov=src",
+    "--cov-report=html",
+    "--cov-report=term-missing",
 ]
 asyncio_mode = "strict"
 markers = [
@@ -126,6 +129,9 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "performance: marks tests as performance tests",
+    "e2e: End-to-end tests",
+    "database: Database integration tests",
+    "messagebus: Message bus integration tests"
 ]
 
 [tool.black]
@@ -150,25 +156,6 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-addopts = [
-    "--cov=src",
-    "--cov-report=html",
-    "--cov-report=term-missing",
-    "--strict-markers",
-    "-v"
-]
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests", 
-    "e2e: End-to-end tests",
-    "slow: Slow running tests",
-    "performance: Performance tests",
-    "database: Database integration tests",
-    "messagebus: Message bus integration tests"
-]
 
 [tool.coverage.run]
 source = ["src"]
