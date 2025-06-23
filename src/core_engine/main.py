@@ -20,9 +20,11 @@ sys.path.insert(0, str(project_root))
 
 from common.message_bus import (  # noqa: E402
     MessageBus,
-    MessageRoutes,
     create_message_bus,
 )
+from strategy_worker.main import StrategyWorkerManager  # noqa: E402
+from strategies.ma_crossover import MAcrossoverStrategy  # noqa: E402
+from strategies.base_strategy import StrategyConfig  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +65,7 @@ class CoreEngine:
         self._signal_received = False
 
         # Component references (will be injected)
-        self.strategy_manager = None
+        self.strategy_worker_manager: Optional[StrategyWorkerManager] = None
         self.capital_manager = None
         self.exchange_connector = None
         self.message_bus: Optional[MessageBus] = None
@@ -220,9 +222,9 @@ class CoreEngine:
 
         try:
             # Check each component
-            if self.strategy_manager:
-                health_results["components"]["strategy_manager"] = (
-                    await self._check_component_health("strategy_manager")
+            if self.strategy_worker_manager:
+                health_results["components"]["strategy_worker_manager"] = (
+                    await self._check_component_health("strategy_worker_manager")
                 )
 
             if self.capital_manager:
@@ -256,6 +258,176 @@ class CoreEngine:
             health_results["error"] = str(e)
 
         return health_results
+    
+    # Strategy Management API
+    async def start_strategy(self, strategy_config: StrategyConfig) -> bool:
+        """전략 시작
+        
+        Args:
+            strategy_config: 시작할 전략 설정
+            
+        Returns:
+            bool: 시작 성공 여부
+        """
+        if not self.strategy_worker_manager:
+            logger.error("Strategy Worker Manager not initialized")
+            return False
+        
+        try:
+            # Strategy Worker 추가 및 시작
+            success = await self.strategy_worker_manager.add_worker(
+                strategy_id=strategy_config.strategy_id,
+                strategy_class=MAcrossoverStrategy,  # 현재는 MA 전략만 지원
+                strategy_config=strategy_config
+            )
+            
+            if success:
+                # 전략 시작
+                success = await self.strategy_worker_manager.start_worker(
+                    strategy_config.strategy_id
+                )
+                
+                if success:
+                    self.status.active_strategies.add(strategy_config.strategy_id)
+                    
+                    logger.info(
+                        f"Strategy {strategy_config.strategy_id} started successfully",
+                        extra={
+                            "component": "core_engine",
+                            "strategy_id": strategy_config.strategy_id,
+                            "active_count": len(self.status.active_strategies)
+                        }
+                    )
+                    
+                    return True
+            
+            logger.error(f"Failed to start strategy {strategy_config.strategy_id}")
+            return False
+            
+        except Exception as e:
+            logger.error(
+                f"Error starting strategy {strategy_config.strategy_id}: {e}",
+                extra={
+                    "component": "core_engine",
+                    "strategy_id": strategy_config.strategy_id,
+                    "error": str(e)
+                }
+            )
+            return False
+    
+    async def stop_strategy(self, strategy_id: str) -> bool:
+        """전략 중지
+        
+        Args:
+            strategy_id: 중지할 전략 ID
+            
+        Returns:
+            bool: 중지 성공 여부
+        """
+        if not self.strategy_worker_manager:
+            logger.error("Strategy Worker Manager not initialized")
+            return False
+        
+        try:
+            success = await self.strategy_worker_manager.stop_worker(strategy_id)
+            
+            if success:
+                self.status.active_strategies.discard(strategy_id)
+                
+                logger.info(
+                    f"Strategy {strategy_id} stopped successfully",
+                    extra={
+                        "component": "core_engine",
+                        "strategy_id": strategy_id,
+                        "active_count": len(self.status.active_strategies)
+                    }
+                )
+                
+            return success
+            
+        except Exception as e:
+            logger.error(
+                f"Error stopping strategy {strategy_id}: {e}",
+                extra={
+                    "component": "core_engine",
+                    "strategy_id": strategy_id,
+                    "error": str(e)
+                }
+            )
+            return False
+    
+    async def restart_strategy(self, strategy_id: str) -> bool:
+        """전략 재시작
+        
+        Args:
+            strategy_id: 재시작할 전략 ID
+            
+        Returns:
+            bool: 재시작 성공 여부
+        """
+        if not self.strategy_worker_manager:
+            logger.error("Strategy Worker Manager not initialized")
+            return False
+        
+        try:
+            success = await self.strategy_worker_manager.restart_worker(strategy_id)
+            
+            if success:
+                logger.info(
+                    f"Strategy {strategy_id} restarted successfully",
+                    extra={
+                        "component": "core_engine",
+                        "strategy_id": strategy_id
+                    }
+                )
+                
+            return success
+            
+        except Exception as e:
+            logger.error(
+                f"Error restarting strategy {strategy_id}: {e}",
+                extra={
+                    "component": "core_engine",
+                    "strategy_id": strategy_id,
+                    "error": str(e)
+                }
+            )
+            return False
+    
+    async def get_strategy_status(self, strategy_id: str = None) -> Dict[str, Any]:
+        """전략 상태 조회
+        
+        Args:
+            strategy_id: 조회할 전략 ID (None이면 전체 조회)
+            
+        Returns:
+            Dict[str, Any]: 전략 상태 정보
+        """
+        if not self.strategy_worker_manager:
+            return {"error": "Strategy Worker Manager not initialized"}
+        
+        try:
+            if strategy_id:
+                # 특정 전략 상태
+                if strategy_id in self.strategy_worker_manager.workers:
+                    worker = self.strategy_worker_manager.workers[strategy_id]
+                    return await worker.health_check()
+                else:
+                    return {"error": f"Strategy {strategy_id} not found"}
+            else:
+                # 전체 전략 상태
+                return await self.strategy_worker_manager.get_all_health_status()
+                
+        except Exception as e:
+            logger.error(
+                f"Error getting strategy status: {e}",
+                extra={
+                    "component": "core_engine",
+                    "strategy_id": strategy_id,
+                    "error": str(e)
+                }
+            )
+            return {"error": str(e)}
 
     # Private methods
     async def _validate_startup_conditions(self) -> bool:
@@ -296,11 +468,16 @@ class CoreEngine:
             # Setup message handlers
             await self._setup_message_handlers()
 
+            # Initialize Strategy Worker Manager
+            self.strategy_worker_manager = StrategyWorkerManager(
+                message_bus=self.message_bus
+            )
+            logger.info(
+                "Strategy Worker Manager initialized successfully",
+                extra={"component": "core_engine"},
+            )
+            
             # TODO: Initialize other components
-            # self.strategy_manager = StrategyManager(
-            #     self.config.get("strategy_manager", {}),
-            #     message_bus=self.message_bus
-            # )
             # self.capital_manager = CapitalManager(
             #     self.config.get("capital_manager", {}),
             #     message_bus=self.message_bus
@@ -362,13 +539,13 @@ class CoreEngine:
                 },
             )
 
-            if routing_key == MessageRoutes.SYSTEM_ERROR:
+            if "system.error" in routing_key:
                 await self._handle_system_error(payload)
-            elif routing_key == MessageRoutes.TRADE_EXECUTED:
+            elif "events.trade_executed" in routing_key:
                 await self._handle_trade_executed(payload)
-            elif routing_key == MessageRoutes.STRATEGY_STARTED:
+            elif "events.strategy_started" in routing_key:
                 await self._handle_strategy_started(payload)
-            elif routing_key == MessageRoutes.STRATEGY_STOPPED:
+            elif "events.strategy_stopped" in routing_key:
                 await self._handle_strategy_stopped(payload)
 
         except Exception as e:
@@ -511,9 +688,12 @@ class CoreEngine:
 
         try:
             # Shutdown components in reverse order
+            # Stop all Strategy Workers first
+            if self.strategy_worker_manager:
+                logger.info("Stopping Strategy Worker Manager...")
+                await self.strategy_worker_manager.stop_all()
+                
             # TODO: Shutdown other components
-            # if self.strategy_manager:
-            #     await self.strategy_manager.stop()
             # if self.capital_manager:
             #     await self.capital_manager.stop()
             # if self.exchange_connector:
@@ -562,7 +742,7 @@ class CoreEngine:
     def _get_component_status(self) -> Dict[str, Any]:
         """Get status of all components."""
         return {
-            "strategy_manager": self.strategy_manager is not None,
+            "strategy_worker_manager": self.strategy_worker_manager is not None,
             "capital_manager": self.capital_manager is not None,
             "exchange_connector": self.exchange_connector is not None,
             "message_bus": self.message_bus is not None,

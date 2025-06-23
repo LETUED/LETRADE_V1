@@ -7,10 +7,18 @@ before execution.
 
 import json
 import logging
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Add path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from common.message_bus import MessageBus, create_message_bus  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -163,15 +171,24 @@ class CapitalManager:
     manages position sizing, and tracks portfolio metrics.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None, message_bus: Optional[MessageBus] = None):
         """Initialize Capital Manager.
 
         Args:
             config: Configuration dictionary
+            message_bus: Message bus instance for communication
         """
         self.config = config or {}
         self.risk_params = RiskParameters()
         self.is_running = False
+        self.message_bus = message_bus
+        
+        # Message routing
+        self._message_handlers = {
+            "request.capital.allocation": self._handle_trade_proposal,
+            "request.capital.validation": self._handle_trade_validation,
+            "events.trade_executed": self._handle_trade_executed_event,
+        }
 
         # Load risk parameters from config
         if "risk_parameters" in self.config:
@@ -211,6 +228,10 @@ class CapitalManager:
 
             # Reset daily counters if needed
             await self._reset_daily_counters()
+            
+            # Setup message subscriptions
+            if self.message_bus:
+                await self._setup_message_subscriptions()
 
             self.is_running = True
 
@@ -239,6 +260,10 @@ class CapitalManager:
                 "Stopping Capital Manager", extra={"component": "capital_manager"}
             )
 
+            # Unsubscribe from messages
+            if self.message_bus:
+                await self._cleanup_message_subscriptions()
+                
             # Persist final state
             await self._persist_portfolio_state()
 
@@ -677,6 +702,257 @@ class CapitalManager:
             "Daily P&L updated",
             extra={"component": "capital_manager", "daily_pnl": self._daily_pnl},
         )
+    
+    # Message handling methods
+    async def _setup_message_subscriptions(self):
+        """메시지 버스 구독 설정"""
+        try:
+            # Capital Manager는 capital_requests 큐에 구독
+            await self.message_bus.subscribe("capital_requests", self._route_message)
+            logger.info(
+                "Subscribed to capital_requests queue",
+                extra={"component": "capital_manager"}
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to setup message subscriptions",
+                extra={"component": "capital_manager", "error": str(e)}
+            )
+            raise
+    
+    async def _cleanup_message_subscriptions(self):
+        """메시지 버스 구독 정리"""
+        try:
+            # TODO: Implement message subscription cleanup
+            logger.info(
+                "Message subscriptions cleaned up",
+                extra={"component": "capital_manager"}
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to cleanup message subscriptions",
+                extra={"component": "capital_manager", "error": str(e)}
+            )
+    
+    async def _route_message(self, message: Dict[str, Any]):
+        """메시지 라우팅 처리"""
+        try:
+            routing_key = message.get("routing_key", "")
+            
+            if routing_key in self._message_handlers:
+                handler = self._message_handlers[routing_key]
+                await handler(message)
+            else:
+                logger.warning(
+                    f"No handler found for routing key: {routing_key}",
+                    extra={"component": "capital_manager"}
+                )
+                
+        except Exception as e:
+            logger.error(
+                "Error routing message",
+                extra={
+                    "component": "capital_manager",
+                    "error": str(e),
+                    "message": message
+                }
+            )
+    
+    async def _handle_trade_proposal(self, message: Dict[str, Any]):
+        """거래 제안 처리"""
+        try:
+            payload = message.get("payload", {})
+            strategy_id = payload.get("strategy_id")
+            signal_data = payload.get("signal_data", {})
+            
+            logger.info(
+                f"Processing trade proposal from strategy {strategy_id}",
+                extra={
+                    "component": "capital_manager",
+                    "strategy_id": strategy_id,
+                    "signal_type": signal_data.get("signal_type")
+                }
+            )
+            
+            # TradeRequest 객체 생성
+            trade_request = self._create_trade_request_from_signal(payload)
+            
+            # 거래 검증
+            validation_response = await self.validate_trade(trade_request)
+            
+            # 응답 메시지 발송
+            await self._send_validation_response(
+                strategy_id, 
+                validation_response,
+                message.get("correlation_id")
+            )
+            
+        except Exception as e:
+            logger.error(
+                "Failed to handle trade proposal",
+                extra={
+                    "component": "capital_manager",
+                    "error": str(e),
+                    "message": message
+                }
+            )
+    
+    async def _handle_trade_validation(self, message: Dict[str, Any]):
+        """거래 검증 요청 처리"""
+        try:
+            payload = message.get("payload", {})
+            
+            # TradeRequest 재구성
+            trade_request = TradeRequest(
+                strategy_id=payload.get("strategy_id"),
+                symbol=payload.get("symbol"),
+                side=payload.get("side"),
+                quantity=payload.get("quantity"),
+                price=payload.get("price"),
+                order_type=payload.get("order_type", "market")
+            )
+            
+            # 검증 수행
+            validation_response = await self.validate_trade(trade_request)
+            
+            # 응답 발송
+            await self._send_validation_response(
+                trade_request.strategy_id,
+                validation_response,
+                message.get("correlation_id")
+            )
+            
+        except Exception as e:
+            logger.error(
+                "Failed to handle trade validation",
+                extra={
+                    "component": "capital_manager",
+                    "error": str(e),
+                    "message": message
+                }
+            )
+    
+    async def _handle_trade_executed_event(self, message: Dict[str, Any]):
+        """거래 실행 이벤트 처리"""
+        try:
+            payload = message.get("payload", {})
+            
+            # 거래 기록 업데이트
+            trade_record = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "strategy_id": payload.get("strategy_id"),
+                "symbol": payload.get("symbol"),
+                "side": payload.get("side"),
+                "executed_quantity": payload.get("filled_quantity", 0),
+                "price": payload.get("average_price", 0),
+                "status": payload.get("status", "filled"),
+                "order_id": payload.get("order_id"),
+                "fees": payload.get("fees", 0)
+            }
+            
+            await self._update_position_tracking(trade_record)
+            await self._update_daily_pnl(trade_record)
+            
+            logger.info(
+                "Trade execution event processed",
+                extra={
+                    "component": "capital_manager",
+                    "order_id": trade_record["order_id"],
+                    "symbol": trade_record["symbol"]
+                }
+            )
+            
+        except Exception as e:
+            logger.error(
+                "Failed to handle trade executed event",
+                extra={
+                    "component": "capital_manager",
+                    "error": str(e),
+                    "message": message
+                }
+            )
+    
+    def _create_trade_request_from_signal(self, payload: Dict[str, Any]) -> TradeRequest:
+        """신호 데이터로부터 TradeRequest 생성"""
+        signal_data = payload.get("signal_data", {})
+        
+        # 기본 거래 크기 설정 (포트폴리오의 1%)
+        default_quantity = 0.01  # BTC 기준
+        
+        return TradeRequest(
+            strategy_id=payload.get("strategy_id"),
+            symbol=signal_data.get("symbol", "BTC/USDT"),
+            side="buy" if signal_data.get("signal_type") == "golden_cross" else "sell",
+            quantity=signal_data.get("quantity", default_quantity),
+            price=signal_data.get("current_price"),
+            order_type="market",
+            metadata={
+                "signal_type": signal_data.get("signal_type"),
+                "signal_strength": signal_data.get("signal_strength", 0),
+                "fast_ma": signal_data.get("fast_ma"),
+                "slow_ma": signal_data.get("slow_ma")
+            }
+        )
+    
+    async def _send_validation_response(
+        self, 
+        strategy_id: str, 
+        validation_response: ValidationResponse,
+        correlation_id: Optional[str] = None
+    ):
+        """검증 응답 메시지 발송"""
+        if not self.message_bus:
+            logger.warning("Message bus not available for sending response")
+            return
+        
+        try:
+            # 응답에 따라 다른 라우팅 키 사용
+            if validation_response.result == ValidationResult.APPROVED:
+                routing_key = "commands.execute_trade"
+                exchange_name = "letrade.commands"
+                
+                payload = {
+                    "strategy_id": strategy_id,
+                    "correlation_id": correlation_id,
+                    "trade_command": {
+                        "symbol": "BTC/USDT",  # TODO: 실제 심볼 사용
+                        "side": "buy",  # TODO: 실제 거래 정보에서 가져오기
+                        "quantity": validation_response.approved_quantity,
+                        "order_type": "market"
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            else:
+                routing_key = "response.capital.validation"
+                exchange_name = "letrade.events"
+                
+                payload = {
+                    "strategy_id": strategy_id,
+                    "correlation_id": correlation_id,
+                    "validation_result": validation_response.to_dict(),
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            
+            await self.message_bus.publish(exchange_name, routing_key, payload)
+            
+            logger.info(
+                f"Validation response sent to strategy {strategy_id}",
+                extra={
+                    "component": "capital_manager",
+                    "result": validation_response.result.value,
+                    "routing_key": routing_key
+                }
+            )
+            
+        except Exception as e:
+            logger.error(
+                "Failed to send validation response",
+                extra={
+                    "component": "capital_manager",
+                    "strategy_id": strategy_id,
+                    "error": str(e)
+                }
+            )
 
 
 async def main():

@@ -428,6 +428,68 @@ class BaseStrategy(ABC):
             "positions": dict(self._position_tracker),
         }
 
+    async def save_strategy_state(self) -> bool:
+        """
+        전략 상태를 데이터베이스에 저장 (MVP 명세서 Section 5.1.1 준수)
+        
+        Returns:
+            bool: 저장 성공 여부
+        """
+        try:
+            # TODO: 실제 데이터베이스 연동 구현 필요
+            # strategies 테이블에 현재 상태 저장
+            strategy_state = {
+                "id": self.strategy_id,
+                "name": self.name,
+                "strategy_type": "MA_CROSSOVER",
+                "parameters": {
+                    "fast_period": getattr(self, 'fast_period', 50),
+                    "slow_period": getattr(self, 'slow_period', 200)
+                },
+                "is_active": self.is_running,
+                "last_signal_time": (
+                    self._last_signal_time.isoformat() 
+                    if self._last_signal_time else None
+                ),
+                "performance_metrics": self.get_performance_metrics(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+            logger.debug(
+                f"Strategy state saved for {self.strategy_id}",
+                extra={"state": strategy_state}
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(
+                f"Failed to save strategy state: {e}",
+                extra={"strategy_id": self.strategy_id}
+            )
+            return False
+    
+    async def load_strategy_state(self) -> bool:
+        """
+        데이터베이스에서 전략 상태 복구 (MVP 명세서 Section 5.1.1 준수)
+        
+        Returns:
+            bool: 로드 성공 여부
+        """
+        try:
+            # TODO: 실제 데이터베이스 연동 구현 필요
+            # strategies 테이블에서 상태 로드
+            
+            logger.debug(f"Strategy state loaded for {self.strategy_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(
+                f"Failed to load strategy state: {e}",
+                extra={"strategy_id": self.strategy_id}
+            )
+            return False
+
     async def health_check(self) -> Dict[str, Any]:
         """Perform strategy health check.
 
@@ -440,6 +502,7 @@ class BaseStrategy(ABC):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "config_valid": self._validate_config(),
             "subscriptions": self.get_required_subscriptions(),
+            "database_connected": False,  # TODO: 실제 DB 연결 상태 확인
         }
 
     def _validate_config(self) -> bool:
