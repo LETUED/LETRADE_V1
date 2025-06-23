@@ -189,8 +189,7 @@ tmp/
 # Docker & 인프라
 # =============================================================================
 
-# Docker
-.dockerignore
+# Docker (keep .dockerignore in repo)
 
 # Terraform
 *.tfstate
