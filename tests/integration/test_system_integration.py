@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
+import pytest_asyncio
 
 from src.capital_manager.main import CapitalManager, TradeRequest
 from src.core_engine.main import CoreEngine
@@ -16,7 +17,6 @@ from src.exchange_connector.main import (
 )
 from src.strategies.base_strategy import (
     BaseStrategy,
-    SignalType,
     StrategyConfig,
     TradingSignal,
 )
@@ -44,10 +44,10 @@ class MockStrategy(BaseStrategy):
             signal = TradingSignal(
                 strategy_id=self.strategy_id,
                 symbol="BTCUSDT",
-                signal_type=SignalType.BUY,
+                side="buy",
                 confidence=0.8,
                 timestamp=datetime.now(timezone.utc),
-                price=50000.0,
+                signal_price=50000.0,
             )
             self._record_signal_generated(signal)
             return signal
@@ -66,7 +66,7 @@ class MockStrategy(BaseStrategy):
 class TestSystemIntegration:
     """Integration tests for the complete trading system."""
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def trading_system(self):
         """Setup a complete trading system for testing."""
         # Core Engine
@@ -187,7 +187,7 @@ class TestSystemIntegration:
 
             signal = strategy.on_data(mock_data, mock_dataframe)
             assert signal is not None
-            assert signal.signal_type == SignalType.BUY
+            assert signal.side == "buy"
 
             # 2. Validate trade through Capital Manager
             trade_request = TradeRequest(
@@ -195,7 +195,7 @@ class TestSystemIntegration:
                 symbol=signal.symbol,
                 side="buy",
                 quantity=0.01,
-                price=signal.price,
+                price=signal.signal_price,
             )
 
             validation_response = await capital_manager.validate_trade(trade_request)
@@ -345,11 +345,7 @@ class TestSystemIntegration:
             await exchange_connector.stop()
             await capital_manager.stop()
 
-
-@pytest.mark.slow
-class TestSystemLoadTesting:
-    """Load testing for the trading system."""
-
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_concurrent_trade_validation(self, trading_system):
         """Test concurrent trade validation performance."""

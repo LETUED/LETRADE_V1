@@ -493,7 +493,7 @@ class BaseStrategy(ABC):
             "Signal recorded",
             extra={
                 "strategy_id": self.strategy_id,
-                "signal_type": signal.signal_type.value,
+                "signal_type": signal.side,
                 "symbol": signal.symbol,
                 "confidence": signal.confidence,
             },
