@@ -3,18 +3,39 @@
 The Exchange Connector provides a unified interface to interact with
 cryptocurrency exchanges, handling authentication, rate limiting,
 and data normalization.
+
+Now includes CCXT integration for real exchange connectivity while maintaining
+backward compatibility with existing Mock implementation.
 """
 
 import asyncio
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
+
+# Import new interfaces
+from .interfaces import (
+    IExchangeConnector, ExchangeConfig, MarketData as NewMarketData,
+    OrderRequest as NewOrderRequest, OrderResponse, AccountBalance,
+    OrderSide as NewOrderSide, OrderType as NewOrderType, OrderStatus as NewOrderStatus
+)
 
 logger = logging.getLogger(__name__)
+
+# Try to import ccxt for real exchange connectivity
+try:
+    import ccxt.async_support as ccxt
+    HAS_CCXT = True
+except ImportError:
+    HAS_CCXT = False
+    logger.warning("ccxt not available, only mock exchange connector will work")
 
 
 class OrderType(Enum):
@@ -672,6 +693,420 @@ async def main():
         logger.error(f"Error: {e}")
     finally:
         await connector_manager.stop()
+
+
+# New CCXT-based Exchange Connector implementing IExchangeConnector interface
+class CCXTExchangeConnector(IExchangeConnector):
+    """CCXT-based exchange connector implementation.
+    
+    Provides real exchange connectivity using ccxt library.
+    Implements circuit breaker pattern for reliability.
+    """
+    
+    def __init__(self, config: ExchangeConfig):
+        """Initialize exchange connector.
+        
+        Args:
+            config: Exchange configuration
+        """
+        if not HAS_CCXT:
+            raise RuntimeError("ccxt library is required for CCXTExchangeConnector")
+            
+        self.config = config
+        self.exchange = None
+        self.is_connected = False
+        self._market_subscriptions = {}
+        self._circuit_breaker_failures = 0
+        self._circuit_breaker_reset_time = None
+        self._last_health_check = None
+        
+        # Circuit breaker configuration
+        self.max_failures = 5
+        self.circuit_breaker_timeout = 300  # 5 minutes
+        
+        logger.info(f"CCXT Exchange connector initialized for {config.exchange_name}")
+    
+    async def connect(self) -> bool:
+        """Establish connection to exchange."""
+        try:
+            if self.is_connected:
+                logger.info("Exchange already connected")
+                return True
+            
+            # Create exchange instance based on configuration
+            exchange_class = getattr(ccxt, self.config.exchange_name.lower())
+            self.exchange = exchange_class(self.config.to_ccxt_config())
+            
+            # Test connection with markets fetch
+            await self.exchange.load_markets()
+            
+            # Verify API credentials with balance check
+            await self.exchange.fetch_balance()
+            
+            self.is_connected = True
+            self._circuit_breaker_failures = 0
+            self._circuit_breaker_reset_time = None
+            
+            logger.info(f"Successfully connected to {self.config.exchange_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to connect to exchange: {e}")
+            self.is_connected = False
+            return False
+    
+    async def disconnect(self) -> bool:
+        """Disconnect from exchange."""
+        try:
+            if self.exchange:
+                await self.exchange.close()
+                self.exchange = None
+            
+            self.is_connected = False
+            self._market_subscriptions.clear()
+            
+            logger.info(f"Disconnected from {self.config.exchange_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error during disconnect: {e}")
+            return False
+    
+    async def get_market_data(self, symbol: str, timeframe: str = '1m', limit: int = 100) -> List[NewMarketData]:
+        """Fetch historical market data."""
+        if not await self._check_circuit_breaker():
+            raise ConnectionError("Circuit breaker is open")
+        
+        try:
+            if not self.is_connected:
+                await self.connect()
+            
+            # Fetch OHLCV data from exchange
+            ohlcv_data = await self.exchange.fetch_ohlcv(
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=limit
+            )
+            
+            # Convert to standardized format
+            market_data = []
+            for ohlcv in ohlcv_data:
+                market_data.append(NewMarketData.from_ccxt_ohlcv(symbol, ohlcv))
+            
+            self._reset_circuit_breaker()
+            logger.debug(f"Fetched {len(market_data)} candles for {symbol}")
+            
+            return market_data
+            
+        except Exception as e:
+            await self._handle_exchange_error(e)
+            raise
+    
+    async def subscribe_market_data(self, symbols: List[str], callback: Callable[[NewMarketData], None]) -> bool:
+        """Subscribe to real-time market data stream."""
+        try:
+            if not self.is_connected:
+                await self.connect()
+            
+            # Check if exchange supports WebSocket
+            if not hasattr(self.exchange, 'watch_ohlcv'):
+                logger.warning(f"{self.config.exchange_name} does not support WebSocket streaming")
+                return False
+            
+            # Start WebSocket subscription for each symbol
+            for symbol in symbols:
+                if symbol not in self._market_subscriptions:
+                    self._market_subscriptions[symbol] = callback
+                    
+                    # Start async task for WebSocket monitoring
+                    asyncio.create_task(self._monitor_symbol_stream(symbol, callback))
+            
+            logger.info(f"Subscribed to market data for {len(symbols)} symbols")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to subscribe to market data: {e}")
+            return False
+    
+    async def place_order(self, order_request: NewOrderRequest) -> OrderResponse:
+        """Place a trading order."""
+        if not await self._check_circuit_breaker():
+            raise ConnectionError("Circuit breaker is open")
+        
+        try:
+            if not order_request.validate():
+                raise ValueError("Invalid order request")
+            
+            if not self.is_connected:
+                await self.connect()
+            
+            # Convert to ccxt parameters
+            ccxt_params = order_request.to_ccxt_params()
+            
+            # Place order based on type
+            if order_request.type == NewOrderType.MARKET:
+                ccxt_order = await self.exchange.create_market_order(
+                    symbol=ccxt_params['symbol'],
+                    side=ccxt_params['side'],
+                    amount=ccxt_params['amount']
+                )
+            else:  # LIMIT order
+                ccxt_order = await self.exchange.create_limit_order(
+                    symbol=ccxt_params['symbol'],
+                    side=ccxt_params['side'],
+                    amount=ccxt_params['amount'],
+                    price=ccxt_params['price']
+                )
+            
+            # Convert response to standardized format
+            order_response = OrderResponse.from_ccxt_order(ccxt_order)
+            
+            self._reset_circuit_breaker()
+            logger.info(f"Order placed successfully: {order_response.order_id}")
+            
+            return order_response
+            
+        except Exception as e:
+            await self._handle_exchange_error(e)
+            raise
+    
+    async def cancel_order(self, order_id: str, symbol: str) -> bool:
+        """Cancel an existing order."""
+        if not await self._check_circuit_breaker():
+            raise ConnectionError("Circuit breaker is open")
+        
+        try:
+            if not self.is_connected:
+                await self.connect()
+            
+            await self.exchange.cancel_order(order_id, symbol)
+            
+            self._reset_circuit_breaker()
+            logger.info(f"Order cancelled successfully: {order_id}")
+            
+            return True
+            
+        except Exception as e:
+            await self._handle_exchange_error(e)
+            return False
+    
+    async def get_order_status(self, order_id: str, symbol: str) -> OrderResponse:
+        """Get current order status."""
+        if not await self._check_circuit_breaker():
+            raise ConnectionError("Circuit breaker is open")
+        
+        try:
+            if not self.is_connected:
+                await self.connect()
+            
+            ccxt_order = await self.exchange.fetch_order(order_id, symbol)
+            order_response = OrderResponse.from_ccxt_order(ccxt_order)
+            
+            self._reset_circuit_breaker()
+            
+            return order_response
+            
+        except Exception as e:
+            await self._handle_exchange_error(e)
+            raise
+    
+    async def get_account_balance(self) -> Dict[str, AccountBalance]:
+        """Get account balance information."""
+        if not await self._check_circuit_breaker():
+            raise ConnectionError("Circuit breaker is open")
+        
+        try:
+            if not self.is_connected:
+                await self.connect()
+            
+            ccxt_balance = await self.exchange.fetch_balance()
+            
+            # Convert to standardized format
+            balances = {}
+            for currency, balance_data in ccxt_balance.items():
+                if currency not in ['info', 'free', 'used', 'total'] and isinstance(balance_data, dict):
+                    balances[currency] = AccountBalance.from_ccxt_balance(currency, balance_data)
+            
+            self._reset_circuit_breaker()
+            logger.debug(f"Fetched balance for {len(balances)} currencies")
+            
+            return balances
+            
+        except Exception as e:
+            await self._handle_exchange_error(e)
+            raise
+    
+    async def get_open_orders(self, symbol: Optional[str] = None) -> List[OrderResponse]:
+        """Get list of open orders."""
+        if not await self._check_circuit_breaker():
+            raise ConnectionError("Circuit breaker is open")
+        
+        try:
+            if not self.is_connected:
+                await self.connect()
+            
+            if symbol:
+                ccxt_orders = await self.exchange.fetch_open_orders(symbol)
+            else:
+                ccxt_orders = await self.exchange.fetch_open_orders()
+            
+            # Convert to standardized format
+            orders = []
+            for ccxt_order in ccxt_orders:
+                orders.append(OrderResponse.from_ccxt_order(ccxt_order))
+            
+            self._reset_circuit_breaker()
+            logger.debug(f"Fetched {len(orders)} open orders")
+            
+            return orders
+            
+        except Exception as e:
+            await self._handle_exchange_error(e)
+            raise
+    
+    async def health_check(self) -> Dict[str, Any]:
+        """Perform health check on exchange connection."""
+        health_status = {
+            'exchange': self.config.exchange_name,
+            'connected': self.is_connected,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'circuit_breaker_open': not await self._check_circuit_breaker(),
+            'failures': self._circuit_breaker_failures,
+            'last_check': self._last_health_check
+        }
+        
+        try:
+            if self.is_connected:
+                # Test with simple API call
+                start_time = time.time()
+                await self.exchange.fetch_ticker('BTC/USDT')
+                response_time = (time.time() - start_time) * 1000
+                
+                health_status.update({
+                    'status': 'healthy',
+                    'response_time_ms': response_time,
+                    'api_accessible': True
+                })
+            else:
+                health_status.update({
+                    'status': 'disconnected',
+                    'api_accessible': False
+                })
+                
+            self._last_health_check = datetime.now(timezone.utc).isoformat()
+            
+        except Exception as e:
+            health_status.update({
+                'status': 'unhealthy',
+                'error': str(e),
+                'api_accessible': False
+            })
+            
+            await self._handle_exchange_error(e)
+        
+        return health_status
+    
+    async def _monitor_symbol_stream(self, symbol: str, callback: Callable[[NewMarketData], None]) -> None:
+        """Monitor WebSocket stream for a specific symbol."""
+        try:
+            while symbol in self._market_subscriptions and self.is_connected:
+                try:
+                    # Watch for new OHLCV data
+                    ohlcv_data = await self.exchange.watch_ohlcv(symbol, '1m')
+                    
+                    if ohlcv_data:
+                        # Convert latest candle to MarketData
+                        latest_candle = ohlcv_data[-1]
+                        market_data = NewMarketData.from_ccxt_ohlcv(symbol, latest_candle)
+                        
+                        # Call the callback function
+                        callback(market_data)
+                    
+                except Exception as e:
+                    logger.error(f"Error in WebSocket stream for {symbol}: {e}")
+                    await asyncio.sleep(1)  # Brief pause before retrying
+                    
+        except Exception as e:
+            logger.error(f"WebSocket monitoring failed for {symbol}: {e}")
+            
+        finally:
+            # Clean up subscription
+            if symbol in self._market_subscriptions:
+                del self._market_subscriptions[symbol]
+    
+    async def _check_circuit_breaker(self) -> bool:
+        """Check if circuit breaker allows operations."""
+        if self._circuit_breaker_failures < self.max_failures:
+            return True
+        
+        if self._circuit_breaker_reset_time is None:
+            self._circuit_breaker_reset_time = time.time() + self.circuit_breaker_timeout
+            return False
+        
+        if time.time() > self._circuit_breaker_reset_time:
+            # Reset circuit breaker
+            self._circuit_breaker_failures = 0
+            self._circuit_breaker_reset_time = None
+            logger.info("Circuit breaker reset")
+            return True
+        
+        return False
+    
+    async def _handle_exchange_error(self, error: Exception) -> None:
+        """Handle exchange errors and update circuit breaker."""
+        self._circuit_breaker_failures += 1
+        
+        logger.error(f"Exchange error (failure {self._circuit_breaker_failures}): {error}")
+        
+        if HAS_CCXT:
+            # Check for specific error types
+            if isinstance(error, ccxt.NetworkError):
+                logger.warning("Network error detected, checking connection")
+                self.is_connected = False
+            elif isinstance(error, ccxt.ExchangeError):
+                logger.warning("Exchange API error detected")
+        
+        # Open circuit breaker if too many failures
+        if self._circuit_breaker_failures >= self.max_failures:
+            logger.warning("Circuit breaker opened due to repeated failures")
+    
+    def _reset_circuit_breaker(self) -> None:
+        """Reset circuit breaker on successful operation."""
+        if self._circuit_breaker_failures > 0:
+            self._circuit_breaker_failures = 0
+            self._circuit_breaker_reset_time = None
+            logger.debug("Circuit breaker reset after successful operation")
+
+
+# Factory function for creating exchange connectors
+def create_exchange_connector(exchange_name: str, config: Dict[str, Any], use_ccxt: bool = False) -> BaseExchangeConnector:
+    """Factory function to create exchange connector instances.
+    
+    Args:
+        exchange_name: Name of the exchange (e.g., 'binance')
+        config: Configuration dictionary
+        use_ccxt: Whether to use CCXT-based connector or Mock connector
+        
+    Returns:
+        Exchange connector instance
+    """
+    if use_ccxt and HAS_CCXT:
+        # Create ExchangeConfig for CCXT connector
+        exchange_config = ExchangeConfig(
+            exchange_name=exchange_name,
+            api_key=config.get('api_key', ''),
+            api_secret=config.get('api_secret', ''),
+            api_passphrase=config.get('api_passphrase'),
+            sandbox=config.get('sandbox', True),
+            rate_limit=config.get('rate_limit', 1200),
+            timeout=config.get('timeout', 30)
+        )
+        return CCXTExchangeConnector(exchange_config)
+    else:
+        # Use existing Mock connector
+        if use_ccxt and not HAS_CCXT:
+            logger.warning("CCXT requested but not available, falling back to Mock connector")
+        return MockExchangeConnector(config)
 
 
 if __name__ == "__main__":
