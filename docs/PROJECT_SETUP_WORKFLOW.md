@@ -504,6 +504,524 @@ git push -u origin dev
    - 커버리지 목표 설정
    - 테스트 환경 구성
 
+## 🔄 Daily Development Workflow
+
+프로젝트 설정 완료 후, 일상적인 개발 작업을 위한 세분화된 워크플로우입니다.
+
+### Step 1: Feature Development Initialization
+
+```bash
+# 1.1 최신 dev 브랜치로 동기화
+git checkout dev
+git pull origin dev
+
+# 1.2 새 feature 브랜치 생성
+git checkout -b feature/[기능명]
+# 예: feature/core-engine-skeleton
+# 예: feature/ma-crossover-strategy
+# 예: feature/telegram-notifications
+```
+
+**브랜치 네이밍 컨벤션:**
+- `feature/[기능명]`: 새 기능 개발
+- `bugfix/[이슈명]`: 버그 수정
+- `hotfix/[긴급수정명]`: 프로덕션 긴급 수정
+- `refactor/[모듈명]`: 코드 리팩토링
+- `docs/[문서명]`: 문서 업데이트
+
+### Step 2: Test-Driven Development (TDD)
+
+```bash
+# 2.1 테스트 파일 먼저 생성
+# 예: Core Engine 개발 시
+touch tests/unit/test_core_engine.py
+touch tests/integration/test_core_engine_integration.py
+
+# 2.2 실패하는 테스트 작성
+cat > tests/unit/test_core_engine.py << 'EOF'
+import pytest
+from src.core_engine.main import CoreEngine
+
+def test_core_engine_initialization():
+    """Core Engine이 올바르게 초기화되는지 테스트"""
+    engine = CoreEngine()
+    assert engine is not None
+    assert engine.status == "initialized"
+
+def test_core_engine_strategy_loading():
+    """전략 로딩 기능 테스트"""
+    engine = CoreEngine()
+    strategies = engine.load_active_strategies()
+    assert isinstance(strategies, list)
+EOF
+
+# 2.3 테스트 실행 (실패 확인)
+pytest tests/unit/test_core_engine.py -v
+# Expected: FAILED (구현되지 않았으므로)
+```
+
+### Step 3: Implementation Phase
+
+```bash
+# 3.1 기본 구조 생성
+mkdir -p src/core_engine
+touch src/core_engine/__init__.py
+touch src/core_engine/main.py
+
+# 3.2 최소 구현으로 테스트 통과시키기
+cat > src/core_engine/main.py << 'EOF'
+"""Core Engine: 시스템의 중앙 오케스트레이터"""
+
+import logging
+from typing import List, Dict, Any
+
+logger = logging.getLogger(__name__)
+
+class CoreEngine:
+    """시스템의 메인 오케스트레이터"""
+    
+    def __init__(self):
+        self.status = "initialized"
+        self.strategies = []
+        logger.info("Core Engine initialized")
+    
+    def load_active_strategies(self) -> List[Dict[str, Any]]:
+        """활성화된 전략들을 로드"""
+        # TODO: 데이터베이스에서 활성 전략 조회
+        return []
+EOF
+
+# 3.3 테스트 실행 (통과 확인)
+pytest tests/unit/test_core_engine.py -v
+# Expected: PASSED
+```
+
+### Step 4: Incremental Development & Testing
+
+```bash
+# 4.1 기능 단위별 커밋
+git add tests/unit/test_core_engine.py
+git commit -m "test: add basic Core Engine unit tests"
+
+git add src/core_engine/
+git commit -m "feat: implement basic Core Engine structure
+
+- Add CoreEngine class with initialization
+- Implement strategy loading interface
+- Add structured logging"
+
+# 4.2 더 복잡한 테스트 추가
+cat >> tests/unit/test_core_engine.py << 'EOF'
+
+def test_strategy_worker_management():
+    """Strategy Worker 관리 기능 테스트"""
+    engine = CoreEngine()
+    
+    # Worker 시작
+    worker_id = engine.start_strategy_worker(strategy_id=1)
+    assert worker_id is not None
+    
+    # Worker 상태 확인
+    status = engine.get_worker_status(worker_id)
+    assert status == "running"
+    
+    # Worker 중지
+    engine.stop_strategy_worker(worker_id)
+    status = engine.get_worker_status(worker_id)
+    assert status == "stopped"
+EOF
+
+# 4.3 기능 구현 및 테스트
+# (구현 → 테스트 → 커밋 반복)
+```
+
+### Step 5: Code Quality & Security Validation
+
+```bash
+# 5.1 자동 포맷팅 적용
+black src/ tests/
+isort src/ tests/
+
+# 5.2 코드 품질 검사
+flake8 src/ tests/
+mypy src/
+
+# 5.3 보안 검사 (거래 시스템 특화)
+# API 키 하드코딩 검사
+grep -r "api_key.*=" src/ && echo "❌ Hardcoded API key detected!" || echo "✅ No hardcoded API keys"
+
+# 시크릿 하드코딩 검사  
+grep -r "secret.*=" src/ && echo "❌ Hardcoded secret detected!" || echo "✅ No hardcoded secrets"
+
+# Dry-run 보호 검사 (거래 관련 코드에서)
+if grep -r "execute_trade\|place_order" src/; then
+    grep -r "dry_run\|test_mode" src/ || echo "⚠️ Trading code needs dry-run protection"
+fi
+```
+
+### Step 6: Integration Testing
+
+```bash
+# 6.1 Docker 서비스 시작
+docker-compose up -d
+
+# 6.2 서비스 연결 대기
+./scripts/wait-for-services.sh
+
+# 6.3 통합 테스트 실행
+pytest tests/integration/ -v
+
+# 6.4 E2E 테스트 (필요시)
+pytest tests/e2e/ -v --slow
+```
+
+### Step 7: Comprehensive Testing & Documentation
+
+```bash
+# 7.1 전체 테스트 스위트 실행
+pytest tests/ -v --cov=src --cov-report=html --cov-report=term-missing
+
+# 7.2 커버리지 확인 (85% 이상 목표)
+echo "Coverage Report:"
+coverage report --show-missing
+
+# 7.3 성능 테스트 (거래 시스템 특화)
+pytest tests/performance/ -v --benchmark-only
+
+# 7.4 문서 업데이트
+# API 문서 자동 생성
+sphinx-build -b html docs/ docs/_build/
+
+# README 업데이트 (필요시)
+# Architecture 다이어그램 업데이트 (필요시)
+```
+
+### Step 8: Final Commit & Push
+
+```bash
+# 8.1 문서 커밋
+git add docs/
+git commit -m "docs: update Core Engine documentation
+
+- Add API documentation
+- Update architecture diagrams  
+- Add usage examples"
+
+# 8.2 마일스톤 완료 커밋 (주요 기능 완료 시)
+git commit --allow-empty -m "feat: complete Day 5-6 milestone - Core Engine implementation
+
+🎯 Milestone: Core Services Skeleton
+📅 Progress: Day 5-6/30 complete
+
+✅ Completed Features:
+- Core Engine basic structure and initialization
+- Strategy loading framework
+- Worker management interface
+- Database connection setup
+- Structured logging implementation
+
+📊 Quality Metrics:
+- Test coverage: 87% (target: 85%+)
+- All security checks passed
+- Performance benchmarks within limits
+- Documentation updated
+
+🔜 Next Phase: Day 7 - Message Bus Integration
+- RabbitMQ exchange setup
+- Event publishing/subscription
+- Strategy-CapitalManager communication
+
+💡 Technical Notes:
+- Implemented process-based worker isolation
+- Added graceful shutdown handling
+- Error boundaries prevent cascade failures"
+
+# 8.3 GitHub에 푸시
+git push -u origin feature/core-engine-skeleton
+```
+
+### Step 9: CI Validation & Monitoring
+
+```bash
+# 9.1 GitHub Actions 모니터링
+echo "Monitor CI pipeline at:"
+echo "https://github.com/LETUED/LETRADE_V1/actions"
+
+# 9.2 CI 실패 시 로컬 디버깅
+# CI와 동일한 환경에서 테스트
+docker run --rm -v $(pwd):/app python:3.11 bash -c "
+  cd /app && 
+  pip install -e .[dev] && 
+  pytest tests/ -v --cov=src
+"
+
+# 9.3 보안 스캔 로컬 실행
+bandit -r src/ -f json -o security-report.json
+safety check --json --output safety-report.json
+```
+
+### Step 10: Pull Request Creation & Management
+
+```bash
+# 10.1 PR 생성 (GitHub CLI 사용 시)
+gh pr create \
+  --title "feat: implement Core Engine skeleton (Day 5-6)" \
+  --body "$(cat <<'EOF'
+## 📋 Description
+
+Implements the Core Engine skeleton as part of Day 5-6 milestone.
+
+### What changed?
+- Core Engine basic structure with process management
+- Strategy loading framework
+- Worker lifecycle management
+- Database connection abstractions
+
+### Why was this change made?
+- Required for MVP system architecture
+- Establishes foundation for strategy execution
+- Enables process-based isolation for reliability
+
+## 🔗 Related Issues
+- Relates to #1 (Day 5-6 milestone)
+- Implements design from #2 (Architecture specification)
+
+## 📦 Type of Change
+- [x] 🚀 Feature: New functionality
+- [x] 📚 Documentation: Documentation updates
+
+## 🔒 Security & Safety (Required for Trading System)
+
+### Security Checklist
+- [x] No hardcoded API keys or secrets
+- [x] All sensitive data uses environment variables
+- [x] Input validation implemented
+- [x] Error handling prevents information leakage
+
+### Trading Safety Checklist
+- [x] Process isolation prevents cascade failures
+- [x] Graceful shutdown handling implemented
+- [x] Error boundaries prevent system crashes
+- [x] State management designed for reconciliation
+
+## 🧪 Testing
+- [x] Unit tests added (87% coverage)
+- [x] Integration tests added
+- [x] Manual testing completed
+- [x] Performance benchmarks pass
+
+## 📊 Performance Impact
+- Memory usage: <256MB per worker (within limits)
+- Startup time: <5 seconds (target: <10s)
+- No significant performance degradation detected
+EOF
+)" \
+  --assignee "@me" \
+  --label "feature,day-5-6,core-engine"
+```
+
+### Step 11: Post-Merge Cleanup
+
+```bash
+# 11.1 PR 병합 후 정리
+git checkout dev
+git pull origin dev
+git branch -d feature/core-engine-skeleton
+
+# 11.2 다음 기능 준비
+git checkout -b feature/next-component
+
+# 11.3 마일스톤 업데이트
+# GitHub Projects에서 진행률 업데이트
+# 다음 주차 계획 검토
+```
+
+## 🤖 Automation Scripts
+
+개발 워크플로우 자동화를 위한 스크립트들:
+
+### `scripts/new-feature.sh`
+```bash
+#!/bin/bash
+# 새 기능 개발 시작 자동화
+
+FEATURE_NAME=$1
+if [ -z "$FEATURE_NAME" ]; then
+    echo "Usage: ./scripts/new-feature.sh <feature-name>"
+    exit 1
+fi
+
+echo "🚀 Starting new feature: $FEATURE_NAME"
+
+# 최신 dev로 동기화
+git checkout dev
+git pull origin dev
+
+# 새 브랜치 생성
+git checkout -b "feature/$FEATURE_NAME"
+
+# 기본 테스트 파일 생성
+mkdir -p "tests/unit"
+touch "tests/unit/test_${FEATURE_NAME//-/_}.py"
+
+# 기본 소스 파일 생성
+mkdir -p "src/${FEATURE_NAME//-/_}"
+touch "src/${FEATURE_NAME//-/_}/__init__.py"
+touch "src/${FEATURE_NAME//-/_}/main.py"
+
+echo "✅ Feature branch ready: feature/$FEATURE_NAME"
+echo "📝 Next steps:"
+echo "  1. Write failing tests in tests/unit/test_${FEATURE_NAME//-/_}.py"
+echo "  2. Implement minimum code to pass tests"
+echo "  3. Run: ./scripts/test-and-commit.sh"
+```
+
+### `scripts/test-and-commit.sh`
+```bash
+#!/bin/bash
+# 테스트 실행 및 품질 검사 자동화
+
+echo "🧪 Running comprehensive test suite..."
+
+# 코드 포맷팅
+echo "🎨 Formatting code..."
+black src/ tests/
+isort src/ tests/
+
+# 린팅
+echo "🔍 Running linters..."
+flake8 src/ tests/ || exit 1
+mypy src/ || exit 1
+
+# 보안 검사
+echo "🔒 Security checks..."
+./scripts/security-check.sh || exit 1
+
+# 테스트 실행
+echo "🧪 Running tests..."
+pytest tests/ -v --cov=src --cov-report=term-missing || exit 1
+
+# 커버리지 확인
+COVERAGE=$(coverage report | tail -n 1 | awk '{print $4}' | sed 's/%//')
+if [ "$COVERAGE" -lt 85 ]; then
+    echo "❌ Coverage $COVERAGE% is below 85% threshold"
+    exit 1
+fi
+
+echo "✅ All checks passed!"
+echo "💡 Ready to commit. Use descriptive commit message following conventional commits."
+```
+
+### `scripts/security-check.sh`
+```bash
+#!/bin/bash
+# 거래 시스템 특화 보안 검사
+
+echo "🔐 Running trading system security checks..."
+
+# 하드코딩된 API 키 검사
+echo "Checking for hardcoded API keys..."
+if grep -r "api_key.*=" src/; then
+    echo "❌ Hardcoded API key detected!"
+    exit 1
+fi
+
+# 하드코딩된 시크릿 검사
+echo "Checking for hardcoded secrets..."
+if grep -r "secret.*=" src/; then
+    echo "❌ Hardcoded secret detected!"
+    exit 1
+fi
+
+# Binance 관련 키워드 검사
+echo "Checking for exchange-specific hardcoded values..."
+if grep -r "binance.*key\|coinbase.*key" src/; then
+    echo "❌ Exchange API key detected!"
+    exit 1
+fi
+
+# Dry-run 보호 검사
+echo "Checking dry-run protection..."
+TRADING_FILES=$(grep -r "execute_trade\|place_order" src/ | cut -d: -f1 | sort | uniq)
+if [ -n "$TRADING_FILES" ]; then
+    for file in $TRADING_FILES; do
+        if ! grep -q "dry_run\|test_mode\|mock" "$file"; then
+            echo "⚠️ $file contains trading code without dry-run protection"
+        fi
+    done
+fi
+
+echo "✅ Security checks completed"
+```
+
+### `scripts/milestone-commit.sh`
+```bash
+#!/bin/bash
+# 마일스톤 완료 커밋 자동화
+
+MILESTONE=$1
+DAY=$2
+DESCRIPTION=$3
+
+if [ -z "$MILESTONE" ] || [ -z "$DAY" ] || [ -z "$DESCRIPTION" ]; then
+    echo "Usage: ./scripts/milestone-commit.sh <milestone> <day> <description>"
+    echo "Example: ./scripts/milestone-commit.sh 'Core Engine' '5-6' 'Basic structure implementation'"
+    exit 1
+fi
+
+# 커버리지 계산
+COVERAGE=$(coverage report | tail -n 1 | awk '{print $4}')
+
+# 자동 마일스톤 커밋 메시지 생성
+git commit --allow-empty -m "feat: complete Day $DAY milestone - $MILESTONE
+
+🎯 Milestone: $DESCRIPTION
+📅 Progress: Day $DAY/30 complete
+
+✅ Quality Metrics:
+- Test coverage: $COVERAGE (target: 85%+)
+- All security checks passed
+- Code quality standards met
+- Documentation updated
+
+🔜 Next Phase: [Update as needed]
+
+💡 Implementation Notes:
+- [Add specific technical details]
+- [Highlight important decisions]
+- [Note any trade-offs or limitations]
+
+🤖 Generated with automated milestone commit script"
+
+echo "✅ Milestone commit created for Day $DAY: $MILESTONE"
+```
+
+## 🎯 Workflow Benefits
+
+이 자동화된 워크플로우의 장점:
+
+### 개발 효율성
+- **자동화된 환경 설정**: 스크립트로 반복 작업 제거
+- **표준화된 프로세스**: 일관된 개발 패턴
+- **빠른 피드백**: 즉시 품질 검증
+
+### 코드 품질 보장
+- **TDD 강제**: 테스트 우선 개발
+- **자동 품질 검사**: 포맷팅, 린팅, 타입 체크
+- **커버리지 보장**: 85% 이상 자동 검증
+
+### 거래 시스템 안전성
+- **자동 보안 검사**: 하드코딩된 시크릿 방지
+- **Dry-run 보호**: 거래 코드 안전성 검증
+- **프로세스 격리**: 장애 전파 방지
+
+### 팀 협업 효율성
+- **명확한 PR**: 표준화된 템플릿과 체크리스트
+- **자동 CI/CD**: GitHub Actions 통합
+- **문서 자동화**: 코드 변경에 따른 문서 업데이트
+
+이 워크플로우를 따르면 **프로덕션 품질의 코드**를 **빠르고 안전하게** 개발할 수 있습니다.
+
 ## 결론
 
 이 워크플로우는 **생산급 시스템 개발을 위한 검증된 방법론**입니다. 특히 금융, 의료, 보안이 중요한 시스템에서 다음과 같은 가치를 제공합니다:

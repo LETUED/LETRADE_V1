@@ -144,7 +144,10 @@ markers = [
     "unit: Unit tests",
     "integration: Integration tests", 
     "e2e: End-to-end tests",
-    "slow: Slow running tests"
+    "slow: Slow running tests",
+    "performance: Performance tests",
+    "database: Database integration tests",
+    "messagebus: Message bus integration tests"
 ]
 
 [tool.coverage.run]
