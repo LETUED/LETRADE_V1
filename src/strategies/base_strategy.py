@@ -21,7 +21,7 @@ from contextlib import contextmanager
 
 import pandas as pd
 
-from ..common.database import Strategy, PerformanceMetric, db_manager
+from common.database import Strategy, PerformanceMetric, db_manager
 
 logger = logging.getLogger(__name__)
 
