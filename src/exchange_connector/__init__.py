@@ -37,6 +37,12 @@ from .interfaces import (
     OrderStatus as NewOrderStatus
 )
 
+# Performance optimized WebSocket connector
+from .websocket_connector import (
+    OptimizedExchangeConnector,
+    create_optimized_connector
+)
+
 __version__ = "0.1.0"
 __author__ = "Letrade Team"
 
@@ -69,4 +75,8 @@ __all__ = [
     "NewOrderSide",
     "NewOrderType",
     "NewOrderStatus",
+    
+    # Performance optimized exports
+    "OptimizedExchangeConnector",
+    "create_optimized_connector",
 ]

@@ -25,6 +25,7 @@ from common.message_bus import (  # noqa: E402
 from strategy_worker.main import StrategyWorkerManager  # noqa: E402
 from strategies.ma_crossover import MAcrossoverStrategy  # noqa: E402
 from strategies.base_strategy import StrategyConfig  # noqa: E402
+from common.state_reconciliation import StateReconciliationEngine  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ class CoreEngine:
         self.capital_manager = None
         self.exchange_connector = None
         self.message_bus: Optional[MessageBus] = None
+        self.state_reconciliation_engine = None
 
         logger.info(
             "Core Engine initialized",
@@ -235,6 +237,11 @@ class CoreEngine:
             if self.exchange_connector:
                 health_results["components"]["exchange_connector"] = (
                     await self._check_component_health("exchange_connector")
+                )
+            
+            if self.state_reconciliation_engine:
+                health_results["components"]["state_reconciliation_engine"] = (
+                    await self._check_component_health("state_reconciliation_engine")
                 )
 
             if self.message_bus:
@@ -477,13 +484,35 @@ class CoreEngine:
                 extra={"component": "core_engine"},
             )
             
-            # TODO: Initialize other components
+            # Initialize optimized Exchange Connector for high-performance trading
+            try:
+                from exchange_connector import create_optimized_connector, ExchangeConfig
+                
+                exchange_config = ExchangeConfig(
+                    exchange_name="binance",
+                    api_key="",  # Will be loaded from environment
+                    api_secret="", 
+                    sandbox=True,  # Start with testnet
+                    enable_rate_limiting=True,
+                    timeout=10.0
+                )
+                
+                self.exchange_connector = create_optimized_connector(exchange_config)
+                logger.info(
+                    "Optimized Exchange Connector initialized (WebSocket + caching)",
+                    extra={"component": "core_engine", "exchange": "binance"}
+                )
+                
+            except ImportError as e:
+                logger.warning(
+                    f"Could not initialize optimized exchange connector: {e}",
+                    extra={"component": "core_engine"}
+                )
+                self.exchange_connector = None
+            
+            # TODO: Initialize Capital Manager when available
             # self.capital_manager = CapitalManager(
             #     self.config.get("capital_manager", {}),
-            #     message_bus=self.message_bus
-            # )
-            # self.exchange_connector = ExchangeConnector(
-            #     self.config.get("exchange_connector", {}),
             #     message_bus=self.message_bus
             # )
 
@@ -639,22 +668,67 @@ class CoreEngine:
         )
 
         try:
-            # TODO: Implement actual reconciliation
-            # - Compare system state with exchange state
-            # - Resolve any discrepancies
-            # - Update position tracking
-
-            self.status.last_reconciliation = datetime.now(timezone.utc)
-            logger.info(
-                "Startup reconciliation completed", extra={"component": "core_engine"}
-            )
+            # Initialize state reconciliation engine if components are available
+            if self.exchange_connector and self.capital_manager:
+                self.state_reconciliation_engine = StateReconciliationEngine(
+                    exchange_connector=self.exchange_connector,
+                    capital_manager=self.capital_manager
+                )
+                
+                # Perform full reconciliation
+                reconciliation_report = await self.state_reconciliation_engine.perform_full_reconciliation()
+                
+                # Check for critical discrepancies
+                critical_discrepancies = reconciliation_report.get_critical_discrepancies()
+                
+                if critical_discrepancies:
+                    logger.error(
+                        f"Startup reconciliation found {len(critical_discrepancies)} critical discrepancies",
+                        extra={
+                            "component": "core_engine",
+                            "critical_count": len(critical_discrepancies),
+                            "session_id": reconciliation_report.session_id
+                        }
+                    )
+                    
+                    # For MVP: Log critical discrepancies but don't halt startup
+                    # In production: Consider halting startup for CRITICAL severity issues
+                    for discrepancy in critical_discrepancies:
+                        logger.error(
+                            f"Critical discrepancy: {discrepancy.description}",
+                            extra={
+                                "component": "core_engine",
+                                "discrepancy_type": discrepancy.type.value,
+                                "severity": discrepancy.severity.value
+                            }
+                        )
+                else:
+                    logger.info(
+                        "Startup reconciliation completed successfully",
+                        extra={
+                            "component": "core_engine",
+                            "discrepancies_found": len(reconciliation_report.discrepancies),
+                            "session_id": reconciliation_report.session_id
+                        }
+                    )
+                
+                self.status.last_reconciliation = datetime.now(timezone.utc)
+                
+            else:
+                logger.warning(
+                    "State reconciliation skipped - exchange_connector or capital_manager not available",
+                    extra={"component": "core_engine"}
+                )
+                self.status.last_reconciliation = datetime.now(timezone.utc)
 
         except Exception as e:
             logger.error(
                 "Startup reconciliation failed",
                 extra={"component": "core_engine", "error": str(e)},
             )
-            raise
+            # For MVP: Don't fail startup on reconciliation errors
+            # In production: Consider failing startup for critical reconciliation failures
+            self.status.last_reconciliation = datetime.now(timezone.utc)
 
     async def _stop_new_operations(self):
         """Stop accepting new trading operations."""
@@ -746,6 +820,7 @@ class CoreEngine:
             "capital_manager": self.capital_manager is not None,
             "exchange_connector": self.exchange_connector is not None,
             "message_bus": self.message_bus is not None,
+            "state_reconciliation_engine": self.state_reconciliation_engine is not None,
         }
 
     async def _check_component_health(self, component_name: str) -> bool:
@@ -790,8 +865,59 @@ class CoreEngine:
         """Background state reconciliation loop."""
         while not self._shutdown_event.is_set():
             try:
-                # TODO: Implement periodic reconciliation
+                if self.state_reconciliation_engine:
+                    logger.info(
+                        "Starting periodic state reconciliation",
+                        extra={"component": "core_engine"}
+                    )
+                    
+                    # Perform periodic reconciliation
+                    reconciliation_report = await self.state_reconciliation_engine.perform_full_reconciliation()
+                    
+                    # Update last reconciliation time
+                    self.status.last_reconciliation = datetime.now(timezone.utc)
+                    
+                    # Check for any new critical discrepancies
+                    critical_discrepancies = reconciliation_report.get_critical_discrepancies()
+                    
+                    if critical_discrepancies:
+                        logger.warning(
+                            f"Periodic reconciliation found {len(critical_discrepancies)} critical discrepancies",
+                            extra={
+                                "component": "core_engine",
+                                "critical_count": len(critical_discrepancies),
+                                "session_id": reconciliation_report.session_id
+                            }
+                        )
+                        
+                        # Emit system alert via message bus
+                        if self.message_bus:
+                            await self.message_bus.publish(
+                                "system_events.reconciliation.critical_discrepancies",
+                                {
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "session_id": reconciliation_report.session_id,
+                                    "critical_count": len(critical_discrepancies),
+                                    "total_discrepancies": len(reconciliation_report.discrepancies),
+                                    "summary": reconciliation_report.to_summary()
+                                }
+                            )
+                    else:
+                        logger.debug(
+                            "Periodic reconciliation completed successfully",
+                            extra={
+                                "component": "core_engine",
+                                "session_id": reconciliation_report.session_id
+                            }
+                        )
+                else:
+                    logger.debug(
+                        "Reconciliation engine not available for periodic check",
+                        extra={"component": "core_engine"}
+                    )
+                
                 await asyncio.sleep(300)  # Every 5 minutes
+                
             except asyncio.CancelledError:
                 break
             except Exception as e:

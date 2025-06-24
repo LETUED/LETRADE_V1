@@ -25,9 +25,12 @@ from sqlalchemy import (
     Text,
     CheckConstraint,
     Index,
-    UniqueConstraint
+    UniqueConstraint,
+    text
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.types import TypeDecorator, Text
+import json
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 from sqlalchemy.sql import func
@@ -308,7 +311,16 @@ class DatabaseManager:
         
     def _get_database_url(self) -> str:
         """환경변수에서 데이터베이스 URL 구성"""
-        # 환경변수 기본값 설정
+        # 환경변수에서 DATABASE_URL이 설정되어 있으면 사용
+        db_url = os.getenv('DATABASE_URL')
+        if db_url:
+            return db_url
+        
+        # TEST_MODE가 설정되어 있으면 SQLite 사용
+        if os.getenv('TEST_MODE', 'false').lower() == 'true':
+            return "sqlite:///./test_letrade.db"
+        
+        # 환경변수 기본값 설정 (PostgreSQL)
         host = os.getenv('DB_HOST', 'localhost')
         port = os.getenv('DB_PORT', '5432')
         database = os.getenv('DB_NAME', 'letrade_db')
@@ -357,11 +369,41 @@ class DatabaseManager:
         
         return self.SessionLocal()
     
-    def close(self) -> None:
+    async def async_connect(self) -> None:
+        """비동기 데이터베이스 연결 설정"""
+        # 동기식 connect 메서드를 호출
+        self.connect()
+    
+    def is_connected(self) -> bool:
+        """데이터베이스 연결 상태 확인"""
+        if self.engine is None:
+            return False
+        
+        try:
+            with self.engine.connect() as connection:
+                # SQLite와 PostgreSQL 모두 호환되는 쿼리 사용
+                result = connection.execute(text("SELECT 1"))
+                result.fetchone()
+            return True
+        except Exception as e:
+            logger.debug(f"연결 테스트 실패: {e}")
+            return False
+    
+    def disconnect(self) -> None:
         """데이터베이스 연결 종료"""
         if self.engine:
             self.engine.dispose()
+            self.engine = None
+            self.SessionLocal = None
             logger.info("데이터베이스 연결이 종료되었습니다.")
+    
+    async def async_disconnect(self) -> None:
+        """비동기 데이터베이스 연결 종료"""
+        self.disconnect()
+    
+    def close(self) -> None:
+        """데이터베이스 연결 종료 (backward compatibility)"""
+        self.disconnect()
 
 
 # 전역 데이터베이스 매니저 인스턴스
