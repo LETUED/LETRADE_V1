@@ -18,34 +18,31 @@ from typing import Any, Dict, List, Optional, Set
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from common.message_bus import (  # noqa: E402
-    MessageBus,
-    create_message_bus,
-)
-from strategy_worker.main import StrategyWorkerManager  # noqa: E402
-from strategies.ma_crossover import MAcrossoverStrategy  # noqa: E402
-from strategies.base_strategy import StrategyConfig  # noqa: E402
-from common.state_reconciliation import StateReconciliationEngine  # noqa: E402
 from capital_manager.main import CapitalManager  # noqa: E402
+from common.message_bus import MessageBus, create_message_bus  # noqa: E402
+from common.state_reconciliation import StateReconciliationEngine  # noqa: E402
+from strategies.base_strategy import StrategyConfig  # noqa: E402
+from strategies.ma_crossover import MAcrossoverStrategy  # noqa: E402
+from strategy_worker.main import StrategyWorkerManager  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 
 class SystemEventObserver:
     """Observer interface for system events."""
-    
+
     async def on_strategy_started(self, strategy_id: str) -> None:
         """Called when a strategy starts."""
         pass
-    
+
     async def on_strategy_stopped(self, strategy_id: str) -> None:
         """Called when a strategy stops."""
         pass
-    
+
     async def on_trade_executed(self, trade_data: Dict[str, Any]) -> None:
         """Called when a trade is executed."""
         pass
-    
+
     async def on_system_error(self, error_data: Dict[str, Any]) -> None:
         """Called when a system error occurs."""
         pass
@@ -53,20 +50,23 @@ class SystemEventObserver:
 
 class ComponentFactory:
     """Factory for creating system components with dependency injection."""
-    
+
     @staticmethod
-    def create_strategy_worker_manager(message_bus: MessageBus) -> StrategyWorkerManager:
+    def create_strategy_worker_manager(
+        message_bus: MessageBus,
+    ) -> StrategyWorkerManager:
         """Create strategy worker manager with message bus."""
         return StrategyWorkerManager(message_bus=message_bus)
-    
+
     @staticmethod
-    def create_state_reconciliation_engine(exchange_connector, capital_manager) -> StateReconciliationEngine:
+    def create_state_reconciliation_engine(
+        exchange_connector, capital_manager
+    ) -> StateReconciliationEngine:
         """Create state reconciliation engine with dependencies."""
         return StateReconciliationEngine(
-            exchange_connector=exchange_connector,
-            capital_manager=capital_manager
+            exchange_connector=exchange_connector, capital_manager=capital_manager
         )
-    
+
     @staticmethod
     async def create_message_bus(config: Dict[str, Any]) -> MessageBus:
         """Create and connect message bus."""
@@ -97,7 +97,7 @@ class CoreEngine:
     - Message bus coordination
     - State reconciliation
     - Risk management oversight
-    
+
     Implements Observer Pattern for system events.
     """
 
@@ -112,7 +112,7 @@ class CoreEngine:
         self._shutdown_event = asyncio.Event()
         self._tasks: List[asyncio.Task] = []
         self._signal_received = False
-        
+
         # Observer Pattern implementation
         self._observers: List[SystemEventObserver] = []
 
@@ -122,7 +122,7 @@ class CoreEngine:
         self.exchange_connector = None
         self.message_bus: Optional[MessageBus] = None
         self.state_reconciliation_engine = None
-        
+
         # Component Factory
         self.component_factory = ComponentFactory()
 
@@ -133,18 +133,18 @@ class CoreEngine:
                 "config_keys": list(self.config.keys()) if self.config else [],
             },
         )
-    
+
     def add_observer(self, observer: SystemEventObserver) -> None:
         """Add system event observer."""
         self._observers.append(observer)
         logger.debug(f"Added observer: {observer.__class__.__name__}")
-    
+
     def remove_observer(self, observer: SystemEventObserver) -> None:
         """Remove system event observer."""
         if observer in self._observers:
             self._observers.remove(observer)
             logger.debug(f"Removed observer: {observer.__class__.__name__}")
-    
+
     async def _notify_observers(self, event_type: str, **kwargs) -> None:
         """Notify all observers of system events."""
         for observer in self._observers:
@@ -318,7 +318,7 @@ class CoreEngine:
                 health_results["components"]["exchange_connector"] = (
                     await self._check_component_health("exchange_connector")
                 )
-            
+
             if self.state_reconciliation_engine:
                 health_results["components"]["state_reconciliation_engine"] = (
                     await self._check_component_health("state_reconciliation_engine")
@@ -345,160 +345,161 @@ class CoreEngine:
             health_results["error"] = str(e)
 
         return health_results
-    
+
     # Strategy Management API
     async def start_strategy(self, strategy_config: StrategyConfig) -> bool:
         """전략 시작
-        
+
         Args:
             strategy_config: 시작할 전략 설정
-            
+
         Returns:
             bool: 시작 성공 여부
         """
         if not self.strategy_worker_manager:
             logger.error("Strategy Worker Manager not initialized")
             return False
-        
+
         try:
             # Strategy Worker 추가 및 시작
             success = await self.strategy_worker_manager.add_worker(
                 strategy_id=strategy_config.strategy_id,
                 strategy_class=MAcrossoverStrategy,  # 현재는 MA 전략만 지원
-                strategy_config=strategy_config
+                strategy_config=strategy_config,
             )
-            
+
             if success:
                 # 전략 시작
                 success = await self.strategy_worker_manager.start_worker(
                     strategy_config.strategy_id
                 )
-                
+
                 if success:
                     self.status.active_strategies.add(strategy_config.strategy_id)
-                    
+
                     # Notify observers
-                    await self._notify_observers("strategy_started", strategy_id=strategy_config.strategy_id)
-                    
+                    await self._notify_observers(
+                        "strategy_started", strategy_id=strategy_config.strategy_id
+                    )
+
                     logger.info(
                         f"Strategy {strategy_config.strategy_id} started successfully",
                         extra={
                             "component": "core_engine",
                             "strategy_id": strategy_config.strategy_id,
-                            "active_count": len(self.status.active_strategies)
-                        }
+                            "active_count": len(self.status.active_strategies),
+                        },
                     )
-                    
+
                     return True
-            
+
             logger.error(f"Failed to start strategy {strategy_config.strategy_id}")
             return False
-            
+
         except Exception as e:
             logger.error(
                 f"Error starting strategy {strategy_config.strategy_id}: {e}",
                 extra={
                     "component": "core_engine",
                     "strategy_id": strategy_config.strategy_id,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             return False
-    
+
     async def stop_strategy(self, strategy_id: str) -> bool:
         """전략 중지
-        
+
         Args:
             strategy_id: 중지할 전략 ID
-            
+
         Returns:
             bool: 중지 성공 여부
         """
         if not self.strategy_worker_manager:
             logger.error("Strategy Worker Manager not initialized")
             return False
-        
+
         try:
             success = await self.strategy_worker_manager.stop_worker(strategy_id)
-            
+
             if success:
                 self.status.active_strategies.discard(strategy_id)
-                
+
                 # Notify observers
-                await self._notify_observers("strategy_stopped", strategy_id=strategy_id)
-                
+                await self._notify_observers(
+                    "strategy_stopped", strategy_id=strategy_id
+                )
+
                 logger.info(
                     f"Strategy {strategy_id} stopped successfully",
                     extra={
                         "component": "core_engine",
                         "strategy_id": strategy_id,
-                        "active_count": len(self.status.active_strategies)
-                    }
+                        "active_count": len(self.status.active_strategies),
+                    },
                 )
-                
+
             return success
-            
+
         except Exception as e:
             logger.error(
                 f"Error stopping strategy {strategy_id}: {e}",
                 extra={
                     "component": "core_engine",
                     "strategy_id": strategy_id,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             return False
-    
+
     async def restart_strategy(self, strategy_id: str) -> bool:
         """전략 재시작
-        
+
         Args:
             strategy_id: 재시작할 전략 ID
-            
+
         Returns:
             bool: 재시작 성공 여부
         """
         if not self.strategy_worker_manager:
             logger.error("Strategy Worker Manager not initialized")
             return False
-        
+
         try:
             success = await self.strategy_worker_manager.restart_worker(strategy_id)
-            
+
             if success:
                 logger.info(
                     f"Strategy {strategy_id} restarted successfully",
-                    extra={
-                        "component": "core_engine",
-                        "strategy_id": strategy_id
-                    }
+                    extra={"component": "core_engine", "strategy_id": strategy_id},
                 )
-                
+
             return success
-            
+
         except Exception as e:
             logger.error(
                 f"Error restarting strategy {strategy_id}: {e}",
                 extra={
                     "component": "core_engine",
                     "strategy_id": strategy_id,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             return False
-    
+
     async def get_strategy_status(self, strategy_id: str = None) -> Dict[str, Any]:
         """전략 상태 조회
-        
+
         Args:
             strategy_id: 조회할 전략 ID (None이면 전체 조회)
-            
+
         Returns:
             Dict[str, Any]: 전략 상태 정보
         """
         if not self.strategy_worker_manager:
             return {"error": "Strategy Worker Manager not initialized"}
-        
+
         try:
             if strategy_id:
                 # 특정 전략 상태
@@ -510,15 +511,15 @@ class CoreEngine:
             else:
                 # 전체 전략 상태
                 return await self.strategy_worker_manager.get_all_health_status()
-                
+
         except Exception as e:
             logger.error(
                 f"Error getting strategy status: {e}",
                 extra={
                     "component": "core_engine",
                     "strategy_id": strategy_id,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             return {"error": str(e)}
 
@@ -531,12 +532,13 @@ class CoreEngine:
             "database": False,
             "message_bus": False,
             "configuration": False,
-            "exchange_api": False
+            "exchange_api": False,
         }
 
         # 1. Database connectivity check
         try:
             from src.common.db_session import db_session
+
             db_session.initialize()
             if db_session.check_connection():
                 validation_results["database"] = True
@@ -558,11 +560,11 @@ class CoreEngine:
         try:
             required_configs = ["exchange", "symbol", "capital_limits"]
             missing_configs = []
-            
+
             for config_key in required_configs:
                 if config_key not in self.config:
                     missing_configs.append(config_key)
-            
+
             if not missing_configs:
                 validation_results["configuration"] = True
                 logger.info("✓ Required configuration validated")
@@ -581,13 +583,13 @@ class CoreEngine:
 
         # 전체 검증 결과
         all_valid = all(validation_results.values())
-        
+
         logger.info(
             f"Startup validation {'PASSED' if all_valid else 'FAILED'}",
             extra={
                 "component": "core_engine",
-                "validation_results": validation_results
-            }
+                "validation_results": validation_results,
+            },
         )
 
         return all_valid
@@ -609,7 +611,9 @@ class CoreEngine:
                 },
             )
 
-            self.message_bus = await self.component_factory.create_message_bus(message_bus_config)
+            self.message_bus = await self.component_factory.create_message_bus(
+                message_bus_config
+            )
             logger.info(
                 "Message bus initialized successfully",
                 extra={"component": "core_engine"},
@@ -619,63 +623,72 @@ class CoreEngine:
             await self._setup_message_handlers()
 
             # Initialize Strategy Worker Manager using Factory
-            self.strategy_worker_manager = self.component_factory.create_strategy_worker_manager(
-                message_bus=self.message_bus
+            self.strategy_worker_manager = (
+                self.component_factory.create_strategy_worker_manager(
+                    message_bus=self.message_bus
+                )
             )
             logger.info(
                 "Strategy Worker Manager initialized successfully",
                 extra={"component": "core_engine"},
             )
-            
+
             # Initialize optimized Exchange Connector for high-performance trading
             try:
-                from exchange_connector import create_optimized_connector, ExchangeConfig
-                
+                from exchange_connector import (
+                    ExchangeConfig,
+                    create_optimized_connector,
+                )
+
                 exchange_config = ExchangeConfig(
                     exchange_name="binance",
                     api_key="",  # Will be loaded from environment
-                    api_secret="", 
+                    api_secret="",
                     sandbox=True,  # Start with testnet
                     enable_rate_limiting=True,
-                    timeout=10.0
+                    timeout=10.0,
                 )
-                
+
                 self.exchange_connector = create_optimized_connector(exchange_config)
                 logger.info(
                     "Optimized Exchange Connector initialized (WebSocket + caching)",
-                    extra={"component": "core_engine", "exchange": "binance"}
+                    extra={"component": "core_engine", "exchange": "binance"},
                 )
-                
+
             except ImportError as e:
                 logger.warning(
                     f"Could not initialize optimized exchange connector: {e}",
-                    extra={"component": "core_engine"}
+                    extra={"component": "core_engine"},
                 )
                 self.exchange_connector = None
-            
+
             # Initialize Capital Manager
-            capital_config = self.config.get("capital_manager", {
-                "max_position_size_pct": 10.0,
-                "max_portfolio_risk_pct": 20.0,
-                "stop_loss_pct": 2.0,
-                "daily_loss_limit_pct": 5.0
-            })
-            
-            self.capital_manager = CapitalManager(
-                message_bus=self.message_bus,
-                config=capital_config
+            capital_config = self.config.get(
+                "capital_manager",
+                {
+                    "max_position_size_pct": 10.0,
+                    "max_portfolio_risk_pct": 20.0,
+                    "stop_loss_pct": 2.0,
+                    "daily_loss_limit_pct": 5.0,
+                },
             )
-            
+
+            self.capital_manager = CapitalManager(
+                message_bus=self.message_bus, config=capital_config
+            )
+
             logger.info(
                 "Capital Manager initialized successfully",
-                extra={"component": "core_engine", "config": capital_config}
+                extra={"component": "core_engine", "config": capital_config},
             )
-            
+
             # Initialize State Reconciliation Engine using Factory when components are ready
             if self.exchange_connector and self.capital_manager:
-                self.state_reconciliation_engine = self.component_factory.create_state_reconciliation_engine(
-                    exchange_connector=self.exchange_connector,
-                    capital_manager=self.capital_manager
+                self.state_reconciliation_engine = (
+                    self.component_factory.create_state_reconciliation_engine(
+                        exchange_connector=self.exchange_connector,
+                        capital_manager=self.capital_manager,
+                    )
                 )
                 logger.info(
                     "State Reconciliation Engine initialized successfully",
@@ -838,25 +851,29 @@ class CoreEngine:
             if self.exchange_connector and self.capital_manager:
                 self.state_reconciliation_engine = StateReconciliationEngine(
                     exchange_connector=self.exchange_connector,
-                    capital_manager=self.capital_manager
+                    capital_manager=self.capital_manager,
                 )
-                
+
                 # Perform full reconciliation
-                reconciliation_report = await self.state_reconciliation_engine.perform_full_reconciliation()
-                
+                reconciliation_report = (
+                    await self.state_reconciliation_engine.perform_full_reconciliation()
+                )
+
                 # Check for critical discrepancies
-                critical_discrepancies = reconciliation_report.get_critical_discrepancies()
-                
+                critical_discrepancies = (
+                    reconciliation_report.get_critical_discrepancies()
+                )
+
                 if critical_discrepancies:
                     logger.error(
                         f"Startup reconciliation found {len(critical_discrepancies)} critical discrepancies",
                         extra={
                             "component": "core_engine",
                             "critical_count": len(critical_discrepancies),
-                            "session_id": reconciliation_report.session_id
-                        }
+                            "session_id": reconciliation_report.session_id,
+                        },
                     )
-                    
+
                     # For MVP: Log critical discrepancies but don't halt startup
                     # In production: Consider halting startup for CRITICAL severity issues
                     for discrepancy in critical_discrepancies:
@@ -865,25 +882,27 @@ class CoreEngine:
                             extra={
                                 "component": "core_engine",
                                 "discrepancy_type": discrepancy.type.value,
-                                "severity": discrepancy.severity.value
-                            }
+                                "severity": discrepancy.severity.value,
+                            },
                         )
                 else:
                     logger.info(
                         "Startup reconciliation completed successfully",
                         extra={
                             "component": "core_engine",
-                            "discrepancies_found": len(reconciliation_report.discrepancies),
-                            "session_id": reconciliation_report.session_id
-                        }
+                            "discrepancies_found": len(
+                                reconciliation_report.discrepancies
+                            ),
+                            "session_id": reconciliation_report.session_id,
+                        },
                     )
-                
+
                 self.status.last_reconciliation = datetime.now(timezone.utc)
-                
+
             else:
                 logger.warning(
                     "State reconciliation skipped - exchange_connector or capital_manager not available",
-                    extra={"component": "core_engine"}
+                    extra={"component": "core_engine"},
                 )
                 self.status.last_reconciliation = datetime.now(timezone.utc)
 
@@ -932,7 +951,7 @@ class CoreEngine:
             if self.strategy_worker_manager:
                 logger.info("Stopping Strategy Worker Manager...")
                 await self.strategy_worker_manager.stop_all()
-                
+
             # TODO: Shutdown other components
             # if self.capital_manager:
             #     await self.capital_manager.stop()
@@ -1034,28 +1053,32 @@ class CoreEngine:
                 if self.state_reconciliation_engine:
                     logger.info(
                         "Starting periodic state reconciliation",
-                        extra={"component": "core_engine"}
+                        extra={"component": "core_engine"},
                     )
-                    
+
                     # Perform periodic reconciliation
-                    reconciliation_report = await self.state_reconciliation_engine.perform_full_reconciliation()
-                    
+                    reconciliation_report = (
+                        await self.state_reconciliation_engine.perform_full_reconciliation()
+                    )
+
                     # Update last reconciliation time
                     self.status.last_reconciliation = datetime.now(timezone.utc)
-                    
+
                     # Check for any new critical discrepancies
-                    critical_discrepancies = reconciliation_report.get_critical_discrepancies()
-                    
+                    critical_discrepancies = (
+                        reconciliation_report.get_critical_discrepancies()
+                    )
+
                     if critical_discrepancies:
                         logger.warning(
                             f"Periodic reconciliation found {len(critical_discrepancies)} critical discrepancies",
                             extra={
                                 "component": "core_engine",
                                 "critical_count": len(critical_discrepancies),
-                                "session_id": reconciliation_report.session_id
-                            }
+                                "session_id": reconciliation_report.session_id,
+                            },
                         )
-                        
+
                         # Emit system alert via message bus
                         if self.message_bus:
                             await self.message_bus.publish(
@@ -1064,26 +1087,28 @@ class CoreEngine:
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "session_id": reconciliation_report.session_id,
                                     "critical_count": len(critical_discrepancies),
-                                    "total_discrepancies": len(reconciliation_report.discrepancies),
-                                    "summary": reconciliation_report.to_summary()
-                                }
+                                    "total_discrepancies": len(
+                                        reconciliation_report.discrepancies
+                                    ),
+                                    "summary": reconciliation_report.to_summary(),
+                                },
                             )
                     else:
                         logger.debug(
                             "Periodic reconciliation completed successfully",
                             extra={
                                 "component": "core_engine",
-                                "session_id": reconciliation_report.session_id
-                            }
+                                "session_id": reconciliation_report.session_id,
+                            },
                         )
                 else:
                     logger.debug(
                         "Reconciliation engine not available for periodic check",
-                        extra={"component": "core_engine"}
+                        extra={"component": "core_engine"},
                     )
-                
+
                 await asyncio.sleep(300)  # Every 5 minutes
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:

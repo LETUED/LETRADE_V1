@@ -150,6 +150,7 @@ class DatabaseSession:
         try:
             with self.get_db() as db:
                 from sqlalchemy import text
+
                 db.execute(text("SELECT 1"))
             return True
         except Exception as e:

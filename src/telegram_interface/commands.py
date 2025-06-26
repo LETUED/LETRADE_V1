@@ -7,26 +7,27 @@ Provides simple, clear system control and monitoring capabilities.
 import asyncio
 import logging
 import uuid
-from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from common.message_bus import MessageBus
-from .service_client import ServiceClient
+
 from .hourly_reporter import HourlyReporter
+from .service_client import ServiceClient
 
 logger = logging.getLogger(__name__)
 
 
 class CommandHandler:
     """Redesigned command handler with intuitive /start /stop /restart structure.
-    
+
     Implements simple, clear command system with automatic hourly reporting.
     Provides easy-to-use system control for non-technical users.
     """
-    
+
     def __init__(self):
         """Initialize redesigned command handler."""
         self.pending_requests: Dict[str, Dict] = {}
@@ -35,51 +36,55 @@ class CommandHandler:
         self.system_running = False
         self.reporting_enabled = False
         logger.info("Redesigned command handler initialized")
-    
+
     async def initialize_service_client(self, message_bus: MessageBus) -> None:
         """Initialize service client for real system communication.
-        
+
         Args:
             message_bus: MessageBus instance for async communication
         """
         self.service_client = ServiceClient(message_bus=message_bus)
         await self.service_client.__aenter__()
         logger.info("Service client initialized for redesigned commands")
-    
-    async def handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
+
+    async def handle_start(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        message_bus: MessageBus,
+    ) -> None:
         """Handle /start command - 시스템 시작 및 정기 보고 활성화.
-        
+
         새로운 직관적 명령어: 시스템을 시작하고 1시간마다 자동 보고를 받습니다.
-        
+
         Args:
             update: Telegram update object
-            context: Telegram context object  
+            context: Telegram context object
             message_bus: Message bus for system communication
         """
         user = update.effective_user
-        
+
         try:
             # Initialize service client if not already done
             if not self.service_client:
                 await self.initialize_service_client(message_bus)
-            
+
             # Initialize hourly reporter if not already done
             if not self.hourly_reporter:
                 self.hourly_reporter = HourlyReporter(self.service_client)
-            
+
             # Start the trading system
             start_result = await self.service_client.start_trading_system(user.id)
-            
-            if start_result.get('success', False):
+
+            if start_result.get("success", False):
                 self.system_running = True
-                
+
                 # Start hourly reporting
                 await self.hourly_reporter.start_reporting(
-                    chat_id=update.effective_chat.id,
-                    bot=update.get_bot()
+                    chat_id=update.effective_chat.id, bot=update.get_bot()
                 )
                 self.reporting_enabled = True
-                
+
                 success_message = f"""
 🚀 **시스템 시작 완료!**
 
@@ -107,50 +112,57 @@ class CommandHandler:
 
 🛡️ **안전한 거래가 시작되었습니다!**
                 """
-                
+
                 await update.message.reply_text(success_message.strip())
-                logger.info(f"System started by user {user.id} with hourly reporting enabled")
-                
+                logger.info(
+                    f"System started by user {user.id} with hourly reporting enabled"
+                )
+
             else:
-                error_msg = start_result.get('error', '알 수 없는 오류')
+                error_msg = start_result.get("error", "알 수 없는 오류")
                 await update.message.reply_text(
                     f"❌ **시스템 시작 실패**\n\n"
                     f"오류: {error_msg}\n\n"
                     f"잠시 후 다시 시도해 주세요."
                 )
-                
+
         except Exception as e:
             logger.error(f"Error in handle_start: {e}")
             await update.message.reply_text(
                 "❌ 시스템 시작 중 오류가 발생했습니다. 관리자에게 문의해 주세요."
             )
-    
-    async def handle_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
+
+    async def handle_stop(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        message_bus: MessageBus,
+    ) -> None:
         """Handle /stop command - 시스템 완전 중지.
-        
+
         Args:
             update: Telegram update object
             context: Telegram context object
             message_bus: Message bus for system communication
         """
         user = update.effective_user
-        
+
         try:
             # Initialize service client if not already done
             if not self.service_client:
                 await self.initialize_service_client(message_bus)
-            
+
             # Stop hourly reporting first
             if self.hourly_reporter:
                 await self.hourly_reporter.stop_reporting()
                 self.reporting_enabled = False
-            
+
             # Stop the trading system
             stop_result = await self.service_client.stop_trading_system(user.id)
-            
-            if stop_result.get('success', False):
+
+            if stop_result.get("success", False):
                 self.system_running = False
-                
+
                 stop_message = f"""
 🛑 **시스템 중지 완료**
 
@@ -176,66 +188,70 @@ class CommandHandler:
 
 시스템이 안전하게 중지되었습니다. 🛡️
                 """
-                
+
                 await update.message.reply_text(stop_message.strip())
                 logger.info(f"System stopped by user {user.id}")
-                
+
             else:
-                error_msg = stop_result.get('error', '알 수 없는 오류')
+                error_msg = stop_result.get("error", "알 수 없는 오류")
                 await update.message.reply_text(
                     f"❌ **시스템 중지 실패**\n\n"
                     f"오류: {error_msg}\n\n"
                     f"긴급한 경우 관리자에게 연락해 주세요."
                 )
-                
+
         except Exception as e:
             logger.error(f"Error in handle_stop: {e}")
             await update.message.reply_text(
                 "❌ 시스템 중지 중 오류가 발생했습니다. 관리자에게 문의해 주세요."
             )
-    
-    async def handle_restart(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
+
+    async def handle_restart(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        message_bus: MessageBus,
+    ) -> None:
         """Handle /restart command - 시스템 재시작.
-        
+
         Args:
             update: Telegram update object
             context: Telegram context object
             message_bus: Message bus for system communication
         """
         user = update.effective_user
-        
+
         try:
             # Initialize service client if not already done
             if not self.service_client:
                 await self.initialize_service_client(message_bus)
-            
+
             # Send restart notification
             await update.message.reply_text(
                 "🔄 **시스템 재시작 중...**\n\n"
                 "잠시만 기다려주세요. 시스템을 안전하게 재시작하고 있습니다."
             )
-            
+
             # Stop hourly reporting first
             if self.hourly_reporter:
                 await self.hourly_reporter.stop_reporting()
                 self.reporting_enabled = False
-            
+
             # Restart the trading system
             restart_result = await self.service_client.restart_trading_system(user.id)
-            
-            if restart_result.get('success', False):
+
+            if restart_result.get("success", False):
                 self.system_running = True
-                
+
                 # Restart hourly reporting
                 if not self.hourly_reporter:
                     self.hourly_reporter = HourlyReporter(self.service_client)
-                
+
                 await self.hourly_reporter.start_reporting(
-                    chat_id=update.effective_chat.id,
-                    bot=update.get_bot()
+                    chat_id=update.effective_chat.id, bot=update.get_bot()
                 )
                 self.reporting_enabled = True
-                
+
                 restart_message = f"""
 ✅ **시스템 재시작 완료!**
 
@@ -261,12 +277,12 @@ class CommandHandler:
 
 시스템이 새롭게 시작되었습니다! 🚀
                 """
-                
+
                 await update.message.reply_text(restart_message.strip())
                 logger.info(f"System restarted by user {user.id}")
-                
+
             else:
-                error_msg = restart_result.get('error', '알 수 없는 오류')
+                error_msg = restart_result.get("error", "알 수 없는 오류")
                 await update.message.reply_text(
                     f"❌ **시스템 재시작 실패**\n\n"
                     f"오류: {error_msg}\n\n"
@@ -274,18 +290,20 @@ class CommandHandler:
                     f"1. `/stop`\n"
                     f"2. `/start`"
                 )
-                
+
         except Exception as e:
             logger.error(f"Error in handle_restart: {e}")
             await update.message.reply_text(
                 "❌ 시스템 재시작 중 오류가 발생했습니다. 관리자에게 문의해 주세요."
             )
-    
-    async def handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+    async def handle_help(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
         """Handle /help command - 새로운 직관적 명령어 가이드.
-        
+
         완전히 재설계된 간단하고 직관적인 명령어 구조를 안내합니다.
-        
+
         Args:
             update: Telegram update object
             context: Telegram context object
@@ -328,7 +346,7 @@ class CommandHandler:
 
 💰 안전한 자동거래를 시작하세요!
         """
-        
+
         try:
             # 일반 텍스트로 전송 (파싱 오류 방지)
             await update.message.reply_text(help_message.strip())
@@ -344,10 +362,15 @@ class CommandHandler:
                 "/portfolio - 포트폴리오\n\n"
                 "자세한 도움말은 /help를 다시 시도해주세요."
             )
-    
-    async def handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
+
+    async def handle_status(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        message_bus: MessageBus,
+    ) -> None:
         """Handle /status command - 실시간 시스템 상태.
-        
+
         Args:
             update: Telegram update object
             context: Telegram context object
@@ -357,18 +380,20 @@ class CommandHandler:
             # Initialize service client if not already done
             if not self.service_client:
                 await self.initialize_service_client(message_bus)
-            
+
             # Get real system status
             status_data = await self.service_client.get_system_status()
-            
+
             # Format status message with real data
-            status_icon = "🟢" if status_data.get('healthy', False) else "🔴"
-            status_text = "정상 운영" if status_data.get('healthy', False) else "문제 발생"
-            
+            status_icon = "🟢" if status_data.get("healthy", False) else "🔴"
+            status_text = (
+                "정상 운영" if status_data.get("healthy", False) else "문제 발생"
+            )
+
             # System running status
             system_status = "🟢 실행 중" if self.system_running else "🔴 중지됨"
             reporting_status = "🟢 활성화" if self.reporting_enabled else "🔴 비활성화"
-            
+
             message = f"""
 {status_icon} **시스템 상태: {status_text}**
 
@@ -392,18 +417,23 @@ class CommandHandler:
 
 🕐 업데이트: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}
             """
-            
+
             await update.message.reply_text(message.strip())
-            
+
         except Exception as e:
             logger.error(f"Error handling status command: {e}")
             await update.message.reply_text(
                 "❌ 시스템 상태 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
             )
-    
-    async def handle_portfolio(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
+
+    async def handle_portfolio(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        message_bus: MessageBus,
+    ) -> None:
         """Handle /portfolio command - 포트폴리오 현황.
-        
+
         Args:
             update: Telegram update object
             context: Telegram context object
@@ -413,38 +443,44 @@ class CommandHandler:
             # Initialize service client if not already done
             if not self.service_client:
                 await self.initialize_service_client(message_bus)
-            
+
             # Get real portfolio data
             portfolio_data = await self.service_client.get_portfolio_status()
-            
+
             # Format portfolio message with real data
-            total_value = portfolio_data.get('total_value', 0)
-            available = portfolio_data.get('available_balance', 0)
-            positions_value = portfolio_data.get('positions_value', 0)
-            unrealized_pnl = portfolio_data.get('unrealized_pnl', 0)
-            daily_pnl = portfolio_data.get('daily_pnl', 0)
-            daily_pnl_percent = portfolio_data.get('daily_pnl_percent', 0)
-            
+            total_value = portfolio_data.get("total_value", 0)
+            available = portfolio_data.get("available_balance", 0)
+            positions_value = portfolio_data.get("positions_value", 0)
+            unrealized_pnl = portfolio_data.get("unrealized_pnl", 0)
+            daily_pnl = portfolio_data.get("daily_pnl", 0)
+            daily_pnl_percent = portfolio_data.get("daily_pnl_percent", 0)
+
             # Asset breakdown
-            assets = portfolio_data.get('assets', [])
+            assets = portfolio_data.get("assets", [])
             asset_lines = []
             for asset in assets:
-                symbol = asset.get('symbol', 'Unknown')
-                amount = asset.get('amount', 0)
-                value = asset.get('value', 0)
-                percentage = asset.get('percentage', 0)
-                
-                if symbol == 'USDT':
+                symbol = asset.get("symbol", "Unknown")
+                amount = asset.get("amount", 0)
+                value = asset.get("value", 0)
+                percentage = asset.get("percentage", 0)
+
+                if symbol == "USDT":
                     asset_lines.append(f"USDT: ${value:.2f} ({percentage:.1f}%) 🔵")
-                elif symbol == 'BTC':
-                    asset_lines.append(f"BTC: {amount:.8f} BTC ≈ ${value:.2f} ({percentage:.1f}%) 🟡")
+                elif symbol == "BTC":
+                    asset_lines.append(
+                        f"BTC: {amount:.8f} BTC ≈ ${value:.2f} ({percentage:.1f}%) 🟡"
+                    )
                 else:
                     asset_lines.append(f"{symbol}: ${value:.2f} ({percentage:.1f}%)")
-            
+
             # Risk assessment
             daily_loss = abs(daily_pnl) if daily_pnl < 0 else 0
-            risk_level = "🟢 낮음" if daily_loss < 2 else "🟡 중간" if daily_loss < 4 else "🔴 높음"
-            
+            risk_level = (
+                "🟢 낮음"
+                if daily_loss < 2
+                else "🟡 중간" if daily_loss < 4 else "🔴 높음"
+            )
+
             message = f"""💼 **포트폴리오 현황**
 
 📊 **계정 요약 (Binance Spot)**
@@ -469,18 +505,23 @@ class CommandHandler:
 {('정상 운영 중' if daily_loss < 3 else '주의 깊은 모니터링 필요')}
 
 🕐 **업데이트**: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"""
-            
+
             await update.message.reply_text(message)
-            
+
         except Exception as e:
             logger.error(f"Error handling portfolio command: {e}")
             await update.message.reply_text(
                 "❌ 포트폴리오 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
             )
-    
-    async def handle_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
+
+    async def handle_report(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        message_bus: MessageBus,
+    ) -> None:
         """Handle /report command - 즉시 상세 보고서.
-        
+
         Args:
             update: Telegram update object
             context: Telegram context object
@@ -490,22 +531,21 @@ class CommandHandler:
             # Initialize service client if not already done
             if not self.service_client:
                 await self.initialize_service_client(message_bus)
-            
+
             # Initialize hourly reporter if not already done for immediate report
             if not self.hourly_reporter:
                 self.hourly_reporter = HourlyReporter(self.service_client)
-            
+
             await update.message.reply_text(
                 "📊 **상세 보고서 생성 중...**\n\n"
                 "포트폴리오, 전략, 거래 활동을 종합 분석하고 있습니다."
             )
-            
+
             # Send immediate comprehensive report
             await self.hourly_reporter.send_immediate_report(
-                chat_id=update.effective_chat.id,
-                bot=update.get_bot()
+                chat_id=update.effective_chat.id, bot=update.get_bot()
             )
-            
+
         except Exception as e:
             logger.error(f"Error handling report command: {e}")
             await update.message.reply_text(

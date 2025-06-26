@@ -5,8 +5,8 @@ when users type '/' in Telegram, similar to BotFather's UX.
 """
 
 import logging
-from typing import List, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List
 
 from telegram import BotCommand
 from telegram.ext import Application
@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 class CommandRegistry:
     """BotFather-style automatic command registration system.
-    
+
     Provides automatic command registration with descriptions that appear
     when users type '/' in Telegram, enhancing user experience with
     discoverable and descriptive command interface.
     """
-    
+
     # Core trading commands with descriptions
     CORE_COMMANDS = [
         BotCommand("/start", "🚀 시스템 시작 + 자동 보고 활성화"),
@@ -30,96 +30,102 @@ class CommandRegistry:
         BotCommand("/status", "📊 실시간 시스템 상태 확인"),
         BotCommand("/portfolio", "💼 포트폴리오 현황 조회"),
         BotCommand("/report", "📈 즉시 상세 보고서 생성"),
-        BotCommand("/help", "❓ 도움말 및 명령어 가이드")
+        BotCommand("/help", "❓ 도움말 및 명령어 가이드"),
     ]
-    
+
     # Advanced commands (shown to experienced users)
     ADVANCED_COMMANDS = [
         BotCommand("/settings", "⚙️ 거래 설정 및 환경 구성"),
         BotCommand("/alerts", "🔔 알림 설정 관리"),
         BotCommand("/security", "🛡️ 보안 설정 관리"),
         BotCommand("/backup", "💾 데이터 백업 및 복원"),
-        BotCommand("/debug", "🔧 디버그 모드 및 로그")
+        BotCommand("/debug", "🔧 디버그 모드 및 로그"),
     ]
-    
+
     # Emergency commands (always available)
     EMERGENCY_COMMANDS = [
         BotCommand("/emergency", "🚨 긴급 중지 및 안전 모드"),
-        BotCommand("/panic", "⛔ 모든 거래 즉시 중단")
+        BotCommand("/panic", "⛔ 모든 거래 즉시 중단"),
     ]
-    
+
     def __init__(self):
         """Initialize command registry."""
         self.registered_commands: List[BotCommand] = []
         self.user_levels: Dict[int, str] = {}  # user_id -> level mapping
         logger.info("Command registry initialized")
-    
-    async def register_commands(self, application: Application, user_level: str = "basic") -> bool:
+
+    async def register_commands(
+        self, application: Application, user_level: str = "basic"
+    ) -> bool:
         """Register commands with Telegram based on user level.
-        
+
         Args:
             application: Telegram application instance
             user_level: User experience level (basic, advanced, expert)
-            
+
         Returns:
             bool: True if registration successful
         """
         try:
             commands = self._get_commands_for_level(user_level)
-            
+
             # Register commands with Telegram
             await application.bot.set_my_commands(commands)
-            
+
             self.registered_commands = commands
-            logger.info(f"Successfully registered {len(commands)} commands for level: {user_level}")
-            
+            logger.info(
+                f"Successfully registered {len(commands)} commands for level: {user_level}"
+            )
+
             # Log registered commands for debugging
             for cmd in commands:
                 logger.debug(f"Registered: {cmd.command} - {cmd.description}")
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to register commands: {e}")
             return False
-    
+
     def _get_commands_for_level(self, user_level: str) -> List[BotCommand]:
         """Get appropriate commands based on user level.
-        
+
         Args:
             user_level: User experience level
-            
+
         Returns:
             List[BotCommand]: Commands appropriate for user level
         """
         commands = self.CORE_COMMANDS.copy()
-        
+
         if user_level in ["advanced", "expert"]:
             commands.extend(self.ADVANCED_COMMANDS)
-        
+
         if user_level == "expert":
             commands.extend(self.EMERGENCY_COMMANDS)
-        
+
         return commands
-    
-    async def update_user_level(self, application: Application, user_id: int, new_level: str) -> bool:
+
+    async def update_user_level(
+        self, application: Application, user_id: int, new_level: str
+    ) -> bool:
         """Update user level and re-register commands.
-        
+
         Args:
             application: Telegram application instance
             user_id: User ID to update
             new_level: New user level
-            
+
         Returns:
             bool: True if update successful
         """
         try:
             old_level = self.user_levels.get(user_id, "basic")
             self.user_levels[user_id] = new_level
-            
+
             # Re-register commands for new level
             success = await self.register_commands(application, new_level)
-            
+
             if success:
                 logger.info(f"Updated user {user_id} level: {old_level} -> {new_level}")
                 return True
@@ -127,39 +133,43 @@ class CommandRegistry:
                 # Rollback on failure
                 self.user_levels[user_id] = old_level
                 return False
-                
+
         except Exception as e:
             logger.error(f"Failed to update user level: {e}")
             return False
-    
+
     def get_command_help(self, command: str) -> str:
         """Get detailed help for specific command.
-        
+
         Args:
             command: Command name (with or without /)
-            
+
         Returns:
             str: Detailed command help or error message
         """
         # Normalize command format
-        if not command.startswith('/'):
-            command = f'/{command}'
-        
+        if not command.startswith("/"):
+            command = f"/{command}"
+
         # Search in all command lists
-        all_commands = self.CORE_COMMANDS + self.ADVANCED_COMMANDS + self.EMERGENCY_COMMANDS
-        
+        all_commands = (
+            self.CORE_COMMANDS + self.ADVANCED_COMMANDS + self.EMERGENCY_COMMANDS
+        )
+
         for cmd in all_commands:
             if cmd.command == command:
                 return self._get_detailed_help(cmd)
-        
-        return f"❌ 알 수 없는 명령어: {command}\n\n/help 명령어로 전체 목록을 확인하세요."
-    
+
+        return (
+            f"❌ 알 수 없는 명령어: {command}\n\n/help 명령어로 전체 목록을 확인하세요."
+        )
+
     def _get_detailed_help(self, command: BotCommand) -> str:
         """Get detailed help for a specific command.
-        
+
         Args:
             command: BotCommand instance
-            
+
         Returns:
             str: Detailed help text
         """
@@ -250,78 +260,87 @@ class CommandRegistry:
 • 연락처 정보
 
 **특징**: 사용자 수준별 맞춤 도움말
-"""
+""",
         }
-        
-        return detailed_help.get(command.command, f"{command.description}\n\n자세한 정보는 개발팀에 문의하세요.")
-    
+
+        return detailed_help.get(
+            command.command,
+            f"{command.description}\n\n자세한 정보는 개발팀에 문의하세요.",
+        )
+
     def get_command_stats(self) -> Dict[str, Any]:
         """Get command registration statistics.
-        
+
         Returns:
             dict: Command registration statistics
         """
         return {
-            'total_commands': len(self.registered_commands),
-            'core_commands': len(self.CORE_COMMANDS),
-            'advanced_commands': len(self.ADVANCED_COMMANDS),
-            'emergency_commands': len(self.EMERGENCY_COMMANDS),
-            'registered_users': len(self.user_levels),
-            'user_levels': dict(self.user_levels),
-            'last_update': datetime.now().isoformat()
+            "total_commands": len(self.registered_commands),
+            "core_commands": len(self.CORE_COMMANDS),
+            "advanced_commands": len(self.ADVANCED_COMMANDS),
+            "emergency_commands": len(self.EMERGENCY_COMMANDS),
+            "registered_users": len(self.user_levels),
+            "user_levels": dict(self.user_levels),
+            "last_update": datetime.now().isoformat(),
         }
-    
+
     def validate_command_format(self, command: str) -> bool:
         """Validate command format and naming conventions.
-        
+
         Args:
             command: Command to validate
-            
+
         Returns:
             bool: True if command format is valid
         """
-        if not command.startswith('/'):
+        if not command.startswith("/"):
             return False
-        
+
         # Remove the '/' and check the rest
         cmd_name = command[1:]
-        
+
         # Check length (3-20 characters)
         if not (3 <= len(cmd_name) <= 20):
             return False
-        
+
         # Check for valid characters (lowercase letters, numbers, underscores)
-        if not cmd_name.replace('_', '').isalnum():
+        if not cmd_name.replace("_", "").isalnum():
             return False
-        
+
         # Check if starts with letter
         if not cmd_name[0].isalpha():
             return False
-        
+
         return True
-    
+
     async def cleanup_old_commands(self, application: Application) -> bool:
         """Clean up old or unused commands.
-        
+
         Args:
             application: Telegram application instance
-            
+
         Returns:
             bool: True if cleanup successful
         """
         try:
             # Get current commands from Telegram
             current_commands = await application.bot.get_my_commands()
-            
+
             # Re-register only current valid commands
-            valid_commands = [cmd for cmd in current_commands if self.validate_command_format(cmd.command)]
-            
+            valid_commands = [
+                cmd
+                for cmd in current_commands
+                if self.validate_command_format(cmd.command)
+            ]
+
             if len(valid_commands) != len(current_commands):
                 await application.bot.set_my_commands(valid_commands)
-                logger.info(f"Cleaned up {len(current_commands) - len(valid_commands)} invalid commands")
-            
+                logger.info(
+                    f"Cleaned up {len(current_commands) - len(valid_commands)} invalid commands"
+                )
+
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to cleanup commands: {e}")
             return False

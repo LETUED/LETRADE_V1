@@ -8,23 +8,28 @@ before execution.
 import json
 import logging
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from decimal import Decimal
-from contextlib import contextmanager
 
 # Add path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from common.message_bus import MessageBus, create_message_bus  # noqa: E402
 from common.database import (  # noqa: E402
-    Portfolio, PortfolioRule, Strategy, Trade, Position, 
-    db_manager, SystemLog
+    Portfolio,
+    PortfolioRule,
+    Position,
+    Strategy,
+    SystemLog,
+    Trade,
+    db_manager,
 )
+from common.message_bus import MessageBus, create_message_bus  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +54,16 @@ class ValidationResult(Enum):
 # Strategy Pattern for validation rules
 class ValidationRule:
     """Base class for validation rules."""
-    
-    async def validate(self, trade_request: 'TradeRequest', context: Dict[str, Any]) -> bool:
+
+    async def validate(
+        self, trade_request: "TradeRequest", context: Dict[str, Any]
+    ) -> bool:
         """Validate trade request.
-        
+
         Args:
             trade_request: Trade request to validate
             context: Validation context including portfolio metrics
-            
+
         Returns:
             True if validation passes, False otherwise
         """
@@ -65,84 +72,104 @@ class ValidationRule:
 
 class AmountBoundsValidationRule(ValidationRule):
     """Validates trade amount bounds."""
-    
-    def __init__(self, risk_params: 'RiskParameters'):
+
+    def __init__(self, risk_params: "RiskParameters"):
         self.risk_params = risk_params
-    
-    async def validate(self, trade_request: 'TradeRequest', context: Dict[str, Any]) -> bool:
+
+    async def validate(
+        self, trade_request: "TradeRequest", context: Dict[str, Any]
+    ) -> bool:
         """Validate trade amount is within bounds."""
-        amount_usd = trade_request.quantity * (trade_request.price or context.get('current_price', 0))
-        
+        amount_usd = trade_request.quantity * (
+            trade_request.price or context.get("current_price", 0)
+        )
+
         if amount_usd < self.risk_params.min_trade_amount:
-            context['rejection_reason'] = f"Trade amount ${amount_usd:.2f} below minimum ${self.risk_params.min_trade_amount}"
+            context["rejection_reason"] = (
+                f"Trade amount ${amount_usd:.2f} below minimum ${self.risk_params.min_trade_amount}"
+            )
             return False
-        
+
         if amount_usd > self.risk_params.max_trade_amount:
-            context['rejection_reason'] = f"Trade amount ${amount_usd:.2f} exceeds maximum ${self.risk_params.max_trade_amount}"
+            context["rejection_reason"] = (
+                f"Trade amount ${amount_usd:.2f} exceeds maximum ${self.risk_params.max_trade_amount}"
+            )
             return False
-        
+
         return True
 
 
 class PositionSizingValidationRule(ValidationRule):
     """Validates position sizing rules."""
-    
-    def __init__(self, risk_params: 'RiskParameters'):
+
+    def __init__(self, risk_params: "RiskParameters"):
         self.risk_params = risk_params
-    
-    async def validate(self, trade_request: 'TradeRequest', context: Dict[str, Any]) -> bool:
+
+    async def validate(
+        self, trade_request: "TradeRequest", context: Dict[str, Any]
+    ) -> bool:
         """Validate position sizing."""
-        portfolio_metrics = context.get('portfolio_metrics', {})
-        total_capital = portfolio_metrics.get('total_capital', 0)
-        
+        portfolio_metrics = context.get("portfolio_metrics", {})
+        total_capital = portfolio_metrics.get("total_capital", 0)
+
         if total_capital == 0:
-            context['rejection_reason'] = "No capital available"
+            context["rejection_reason"] = "No capital available"
             return False
-        
-        trade_value = trade_request.quantity * (trade_request.price or context.get('current_price', 0))
+
+        trade_value = trade_request.quantity * (
+            trade_request.price or context.get("current_price", 0)
+        )
         position_percent = (trade_value / total_capital) * 100
-        
+
         if position_percent > self.risk_params.max_position_size_percent:
-            context['rejection_reason'] = f"Position size {position_percent:.2f}% exceeds limit {self.risk_params.max_position_size_percent}%"
+            context["rejection_reason"] = (
+                f"Position size {position_percent:.2f}% exceeds limit {self.risk_params.max_position_size_percent}%"
+            )
             return False
-        
+
         return True
 
 
 class RiskLimitValidationRule(ValidationRule):
     """Validates risk limits."""
-    
-    def __init__(self, risk_params: 'RiskParameters'):
+
+    def __init__(self, risk_params: "RiskParameters"):
         self.risk_params = risk_params
-    
-    async def validate(self, trade_request: 'TradeRequest', context: Dict[str, Any]) -> bool:
+
+    async def validate(
+        self, trade_request: "TradeRequest", context: Dict[str, Any]
+    ) -> bool:
         """Validate risk limits."""
-        portfolio_metrics = context.get('portfolio_metrics', {})
-        current_risk = portfolio_metrics.get('total_risk_percent', 0)
-        
+        portfolio_metrics = context.get("portfolio_metrics", {})
+        current_risk = portfolio_metrics.get("total_risk_percent", 0)
+
         if current_risk > self.risk_params.max_portfolio_risk_percent:
-            context['rejection_reason'] = f"Portfolio risk {current_risk:.2f}% exceeds limit {self.risk_params.max_portfolio_risk_percent}%"
+            context["rejection_reason"] = (
+                f"Portfolio risk {current_risk:.2f}% exceeds limit {self.risk_params.max_portfolio_risk_percent}%"
+            )
             return False
-        
+
         return True
 
 
 class ValidationRuleEngine:
     """Engine that applies validation rules using Strategy Pattern."""
-    
-    def __init__(self, risk_params: 'RiskParameters'):
+
+    def __init__(self, risk_params: "RiskParameters"):
         self.risk_params = risk_params
         self.rules = [
             AmountBoundsValidationRule(risk_params),
             PositionSizingValidationRule(risk_params),
-            RiskLimitValidationRule(risk_params)
+            RiskLimitValidationRule(risk_params),
         ]
-    
+
     def add_rule(self, rule: ValidationRule) -> None:
         """Add a validation rule."""
         self.rules.append(rule)
-    
-    async def validate_all(self, trade_request: 'TradeRequest', context: Dict[str, Any]) -> bool:
+
+    async def validate_all(
+        self, trade_request: "TradeRequest", context: Dict[str, Any]
+    ) -> bool:
         """Apply all validation rules."""
         for rule in self.rules:
             if not await rule.validate(trade_request, context):
@@ -281,7 +308,11 @@ class CapitalManager:
     manages position sizing, and tracks portfolio metrics.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, message_bus: Optional[MessageBus] = None):
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        message_bus: Optional[MessageBus] = None,
+    ):
         """Initialize Capital Manager.
 
         Args:
@@ -292,10 +323,10 @@ class CapitalManager:
         self.risk_params = RiskParameters()
         self.is_running = False
         self.message_bus = message_bus
-        
+
         # Strategy Pattern: Initialize validation rule engine
         self.validation_engine = ValidationRuleEngine(self.risk_params)
-        
+
         # Message routing
         self._message_handlers = {
             "request.capital.allocation": self._handle_trade_proposal,
@@ -318,9 +349,9 @@ class CapitalManager:
         # Circuit breakers
         self._max_daily_loss_triggered = False
         self._emergency_stop = False
-        
+
         # Database integration for MVP state reconciliation
-        self._portfolio_id = self.config.get('portfolio_id', 1)  # Default portfolio
+        self._portfolio_id = self.config.get("portfolio_id", 1)  # Default portfolio
         self._portfolio_rules_cache = {}  # Cache for portfolio rules
         self._db_connected = False
 
@@ -346,7 +377,7 @@ class CapitalManager:
 
             # Initialize database connection and load state
             await self._initialize_database_connection()
-            
+
             # Load portfolio rules and state from database
             await self._load_portfolio_state_from_db()
 
@@ -355,7 +386,7 @@ class CapitalManager:
 
             # Reset daily counters if needed
             await self._reset_daily_counters()
-            
+
             # Setup message subscriptions
             if self.message_bus:
                 await self._setup_message_subscriptions()
@@ -390,7 +421,7 @@ class CapitalManager:
             # Unsubscribe from messages
             if self.message_bus:
                 await self._cleanup_message_subscriptions()
-                
+
             # Persist final state
             await self._persist_portfolio_state()
 
@@ -462,29 +493,35 @@ class CapitalManager:
 
             # Portfolio metrics for validation context
             portfolio_metrics = await self.get_portfolio_metrics()
-            
+
             # Create validation context
             validation_context = {
-                'current_price': trade_request.price or 100.0,  # Default price for estimation
-                'portfolio_metrics': {
-                    'total_capital': portfolio_metrics.total_value,
-                    'total_risk_percent': portfolio_metrics.risk_level * 10  # Convert to percentage
-                }
+                "current_price": trade_request.price
+                or 100.0,  # Default price for estimation
+                "portfolio_metrics": {
+                    "total_capital": portfolio_metrics.total_value,
+                    "total_risk_percent": portfolio_metrics.risk_level
+                    * 10,  # Convert to percentage
+                },
             }
 
             # Apply Strategy Pattern validation
-            validation_passed = await self.validation_engine.validate_all(trade_request, validation_context)
-            
+            validation_passed = await self.validation_engine.validate_all(
+                trade_request, validation_context
+            )
+
             if not validation_passed:
-                response.reasons.append(validation_context.get('rejection_reason', 'Validation failed'))
+                response.reasons.append(
+                    validation_context.get("rejection_reason", "Validation failed")
+                )
                 return response
 
             # Calculate trade amount for further processing
-            trade_amount = trade_request.quantity * validation_context['current_price']
-            
+            trade_amount = trade_request.quantity * validation_context["current_price"]
+
             # Set approved quantity (validation passed, so approve full amount)
             response.approved_quantity = trade_request.quantity
-            
+
             # Calculate position size percentage for risk level assessment
             position_size_percent = (trade_amount / portfolio_metrics.total_value) * 100
             response.risk_level = self._calculate_risk_level(position_size_percent)
@@ -558,7 +595,7 @@ class CapitalManager:
 
             # Save trade validation result to database
             self.save_trade_to_db(trade_request, response)
-            
+
             # Log risk event if rejected
             if response.result != ValidationResult.APPROVED:
                 self.log_risk_event_to_db(
@@ -567,8 +604,8 @@ class CapitalManager:
                         "strategy_id": trade_request.strategy_id,
                         "symbol": trade_request.symbol,
                         "reasons": response.reasons,
-                        "risk_level": response.risk_level.value
-                    }
+                        "risk_level": response.risk_level.value,
+                    },
                 )
 
             return response
@@ -624,12 +661,14 @@ class CapitalManager:
 
             # Update position in database
             position_data = {
-                'strategy_id': trade_request.strategy_id,
-                'side': trade_request.side,
-                'size': execution_result.get("filled_quantity", 0),
-                'entry_price': execution_result.get("average_price", trade_request.price),
-                'unrealized_pnl': 0,  # Will be updated by market data
-                'realized_pnl': 0
+                "strategy_id": trade_request.strategy_id,
+                "side": trade_request.side,
+                "size": execution_result.get("filled_quantity", 0),
+                "entry_price": execution_result.get(
+                    "average_price", trade_request.price
+                ),
+                "unrealized_pnl": 0,  # Will be updated by market data
+                "realized_pnl": 0,
             }
             self.update_position_in_db(trade_request.symbol, position_data)
 
@@ -842,7 +881,7 @@ class CapitalManager:
             "Daily P&L updated",
             extra={"component": "capital_manager", "daily_pnl": self._daily_pnl},
         )
-    
+
     # Message handling methods
     async def _setup_message_subscriptions(self):
         """메시지 버스 구독 설정"""
@@ -851,97 +890,95 @@ class CapitalManager:
             await self.message_bus.subscribe("capital_requests", self._route_message)
             logger.info(
                 "Subscribed to capital_requests queue",
-                extra={"component": "capital_manager"}
+                extra={"component": "capital_manager"},
             )
         except Exception as e:
             logger.error(
                 "Failed to setup message subscriptions",
-                extra={"component": "capital_manager", "error": str(e)}
+                extra={"component": "capital_manager", "error": str(e)},
             )
             raise
-    
+
     async def _cleanup_message_subscriptions(self):
         """메시지 버스 구독 정리"""
         try:
             # TODO: Implement message subscription cleanup
             logger.info(
                 "Message subscriptions cleaned up",
-                extra={"component": "capital_manager"}
+                extra={"component": "capital_manager"},
             )
         except Exception as e:
             logger.error(
                 "Failed to cleanup message subscriptions",
-                extra={"component": "capital_manager", "error": str(e)}
+                extra={"component": "capital_manager", "error": str(e)},
             )
-    
+
     async def _route_message(self, message: Dict[str, Any]):
         """메시지 라우팅 처리"""
         try:
             routing_key = message.get("routing_key", "")
-            
+
             if routing_key in self._message_handlers:
                 handler = self._message_handlers[routing_key]
                 await handler(message)
             else:
                 logger.warning(
                     f"No handler found for routing key: {routing_key}",
-                    extra={"component": "capital_manager"}
+                    extra={"component": "capital_manager"},
                 )
-                
+
         except Exception as e:
             logger.error(
                 "Error routing message",
                 extra={
                     "component": "capital_manager",
                     "error": str(e),
-                    "message": message
-                }
+                    "message": message,
+                },
             )
-    
+
     async def _handle_trade_proposal(self, message: Dict[str, Any]):
         """거래 제안 처리"""
         try:
             payload = message.get("payload", {})
             strategy_id = payload.get("strategy_id")
             signal_data = payload.get("signal_data", {})
-            
+
             logger.info(
                 f"Processing trade proposal from strategy {strategy_id}",
                 extra={
                     "component": "capital_manager",
                     "strategy_id": strategy_id,
-                    "signal_type": signal_data.get("signal_type")
-                }
+                    "signal_type": signal_data.get("signal_type"),
+                },
             )
-            
+
             # TradeRequest 객체 생성
             trade_request = self._create_trade_request_from_signal(payload)
-            
+
             # 거래 검증
             validation_response = await self.validate_trade(trade_request)
-            
+
             # 응답 메시지 발송
             await self._send_validation_response(
-                strategy_id, 
-                validation_response,
-                message.get("correlation_id")
+                strategy_id, validation_response, message.get("correlation_id")
             )
-            
+
         except Exception as e:
             logger.error(
                 "Failed to handle trade proposal",
                 extra={
                     "component": "capital_manager",
                     "error": str(e),
-                    "message": message
-                }
+                    "message": message,
+                },
             )
-    
+
     async def _handle_trade_validation(self, message: Dict[str, Any]):
         """거래 검증 요청 처리"""
         try:
             payload = message.get("payload", {})
-            
+
             # TradeRequest 재구성
             trade_request = TradeRequest(
                 strategy_id=payload.get("strategy_id"),
@@ -949,34 +986,34 @@ class CapitalManager:
                 side=payload.get("side"),
                 quantity=payload.get("quantity"),
                 price=payload.get("price"),
-                order_type=payload.get("order_type", "market")
+                order_type=payload.get("order_type", "market"),
             )
-            
+
             # 검증 수행
             validation_response = await self.validate_trade(trade_request)
-            
+
             # 응답 발송
             await self._send_validation_response(
                 trade_request.strategy_id,
                 validation_response,
-                message.get("correlation_id")
+                message.get("correlation_id"),
             )
-            
+
         except Exception as e:
             logger.error(
                 "Failed to handle trade validation",
                 extra={
                     "component": "capital_manager",
                     "error": str(e),
-                    "message": message
-                }
+                    "message": message,
+                },
             )
-    
+
     async def _handle_trade_executed_event(self, message: Dict[str, Any]):
         """거래 실행 이벤트 처리"""
         try:
             payload = message.get("payload", {})
-            
+
             # 거래 기록 업데이트
             trade_record = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -987,38 +1024,40 @@ class CapitalManager:
                 "price": payload.get("average_price", 0),
                 "status": payload.get("status", "filled"),
                 "order_id": payload.get("order_id"),
-                "fees": payload.get("fees", 0)
+                "fees": payload.get("fees", 0),
             }
-            
+
             await self._update_position_tracking(trade_record)
             await self._update_daily_pnl(trade_record)
-            
+
             logger.info(
                 "Trade execution event processed",
                 extra={
                     "component": "capital_manager",
                     "order_id": trade_record["order_id"],
-                    "symbol": trade_record["symbol"]
-                }
+                    "symbol": trade_record["symbol"],
+                },
             )
-            
+
         except Exception as e:
             logger.error(
                 "Failed to handle trade executed event",
                 extra={
                     "component": "capital_manager",
                     "error": str(e),
-                    "message": message
-                }
+                    "message": message,
+                },
             )
-    
-    def _create_trade_request_from_signal(self, payload: Dict[str, Any]) -> TradeRequest:
+
+    def _create_trade_request_from_signal(
+        self, payload: Dict[str, Any]
+    ) -> TradeRequest:
         """신호 데이터로부터 TradeRequest 생성"""
         signal_data = payload.get("signal_data", {})
-        
+
         # 기본 거래 크기 설정 (포트폴리오의 1%)
         default_quantity = 0.01  # BTC 기준
-        
+
         return TradeRequest(
             strategy_id=payload.get("strategy_id"),
             symbol=signal_data.get("symbol", "BTC/USDT"),
@@ -1030,27 +1069,27 @@ class CapitalManager:
                 "signal_type": signal_data.get("signal_type"),
                 "signal_strength": signal_data.get("signal_strength", 0),
                 "fast_ma": signal_data.get("fast_ma"),
-                "slow_ma": signal_data.get("slow_ma")
-            }
+                "slow_ma": signal_data.get("slow_ma"),
+            },
         )
-    
+
     async def _send_validation_response(
-        self, 
-        strategy_id: str, 
+        self,
+        strategy_id: str,
         validation_response: ValidationResponse,
-        correlation_id: Optional[str] = None
+        correlation_id: Optional[str] = None,
     ):
         """검증 응답 메시지 발송"""
         if not self.message_bus:
             logger.warning("Message bus not available for sending response")
             return
-        
+
         try:
             # 응답에 따라 다른 라우팅 키 사용
             if validation_response.result == ValidationResult.APPROVED:
                 routing_key = "commands.execute_trade"
                 exchange_name = "letrade.commands"
-                
+
                 payload = {
                     "strategy_id": strategy_id,
                     "correlation_id": correlation_id,
@@ -1058,129 +1097,144 @@ class CapitalManager:
                         "symbol": "BTC/USDT",  # TODO: 실제 심볼 사용
                         "side": "buy",  # TODO: 실제 거래 정보에서 가져오기
                         "quantity": validation_response.approved_quantity,
-                        "order_type": "market"
+                        "order_type": "market",
                     },
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             else:
                 routing_key = "response.capital.validation"
                 exchange_name = "letrade.events"
-                
+
                 payload = {
                     "strategy_id": strategy_id,
                     "correlation_id": correlation_id,
                     "validation_result": validation_response.to_dict(),
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
-            
+
             await self.message_bus.publish(exchange_name, routing_key, payload)
-            
+
             logger.info(
                 f"Validation response sent to strategy {strategy_id}",
                 extra={
                     "component": "capital_manager",
                     "result": validation_response.result.value,
-                    "routing_key": routing_key
-                }
+                    "routing_key": routing_key,
+                },
             )
-            
+
         except Exception as e:
             logger.error(
                 "Failed to send validation response",
                 extra={
                     "component": "capital_manager",
                     "strategy_id": strategy_id,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
-    
+
     async def _initialize_database_connection(self) -> None:
         """Initialize database connection for MVP state reconciliation."""
         try:
             # Ensure database manager is connected
             if not db_manager.engine:
                 db_manager.connect()
-            
+
             self._db_connected = True
             logger.info("Database connection initialized for Capital Manager")
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize database connection: {e}")
             self._db_connected = False
-    
+
     async def _load_portfolio_state_from_db(self) -> None:
         """Load portfolio rules and state from database.
-        
+
         Critical for MVP state reconciliation requirements.
         """
         try:
             if not self._db_connected:
                 logger.warning("Database not connected, skipping state load")
                 return
-                
+
             with self._get_db_session() as session:
                 # Load portfolio
-                portfolio = session.query(Portfolio).filter_by(id=self._portfolio_id).first()
+                portfolio = (
+                    session.query(Portfolio).filter_by(id=self._portfolio_id).first()
+                )
                 if not portfolio:
-                    logger.warning(f"Portfolio {self._portfolio_id} not found in database")
+                    logger.warning(
+                        f"Portfolio {self._portfolio_id} not found in database"
+                    )
                     return
-                
+
                 # Load portfolio rules
-                rules = session.query(PortfolioRule)\
-                    .filter_by(portfolio_id=self._portfolio_id, is_active=True)\
+                rules = (
+                    session.query(PortfolioRule)
+                    .filter_by(portfolio_id=self._portfolio_id, is_active=True)
                     .all()
-                
+                )
+
                 # Update risk parameters from database rules
                 for rule in rules:
-                    rule_value = rule.rule_value.get('value', 0) if rule.rule_value else 0
-                    
-                    if rule.rule_type == 'max_position_size_percent':
+                    rule_value = (
+                        rule.rule_value.get("value", 0) if rule.rule_value else 0
+                    )
+
+                    if rule.rule_type == "max_position_size_percent":
                         self.risk_params.max_position_size_percent = rule_value
-                    elif rule.rule_type == 'max_daily_loss_percent':
+                    elif rule.rule_type == "max_daily_loss_percent":
                         self.risk_params.max_daily_loss_percent = rule_value
-                    elif rule.rule_type == 'max_portfolio_exposure_percent':
+                    elif rule.rule_type == "max_portfolio_exposure_percent":
                         self.risk_params.max_portfolio_risk_percent = rule_value
-                    elif rule.rule_type == 'min_position_size_usd':
+                    elif rule.rule_type == "min_position_size_usd":
                         # Store for validation later
                         self._portfolio_rules_cache[rule.rule_type] = rule_value
-                    elif rule.rule_type == 'blacklisted_symbols':
+                    elif rule.rule_type == "blacklisted_symbols":
                         # Update blocked symbols
-                        blocked_symbols = rule.rule_value.get('symbols', [])
+                        blocked_symbols = rule.rule_value.get("symbols", [])
                         self._blocked_symbols.update(blocked_symbols)
-                
+
                 # Load current positions from database
-                positions = session.query(Position)\
-                    .join(Strategy)\
-                    .filter(Strategy.portfolio_id == self._portfolio_id, Position.is_open == True)\
+                positions = (
+                    session.query(Position)
+                    .join(Strategy)
+                    .filter(
+                        Strategy.portfolio_id == self._portfolio_id,
+                        Position.is_open == True,
+                    )
                     .all()
-                
+                )
+
                 for position in positions:
                     position_data = {
-                        'strategy_id': position.strategy_id,
-                        'side': position.side,
-                        'size': float(position.current_size),
-                        'entry_price': float(position.entry_price),
-                        'unrealized_pnl': float(position.unrealized_pnl),
-                        'realized_pnl': float(position.realized_pnl)
+                        "strategy_id": position.strategy_id,
+                        "side": position.side,
+                        "size": float(position.current_size),
+                        "entry_price": float(position.entry_price),
+                        "unrealized_pnl": float(position.unrealized_pnl),
+                        "realized_pnl": float(position.realized_pnl),
                     }
                     self._positions[position.symbol] = position_data
-                
+
                 logger.info(
                     f"Loaded portfolio state from database",
                     extra={
                         "portfolio_id": self._portfolio_id,
                         "rules_loaded": len(rules),
                         "positions_loaded": len(positions),
-                        "blocked_symbols": len(self._blocked_symbols)
-                    }
+                        "blocked_symbols": len(self._blocked_symbols),
+                    },
                 )
-                
+
         except Exception as e:
             logger.error(f"Failed to load portfolio state from database: {e}")
-    
-    def save_trade_to_db(self, trade_request: TradeRequest, validation_result: ValidationResponse) -> None:
+
+    def save_trade_to_db(
+        self, trade_request: TradeRequest, validation_result: ValidationResponse
+    ) -> None:
         """Save trade record to database.
-        
+
         Args:
             trade_request: Original trade request
             validation_result: Validation result
@@ -1189,46 +1243,63 @@ class CapitalManager:
             if not self._db_connected:
                 logger.warning("Database not connected, skipping trade save")
                 return
-                
+
             with self._get_db_session() as session:
                 # Get strategy
-                strategy = session.query(Strategy).filter_by(id=trade_request.strategy_id).first()
+                strategy = (
+                    session.query(Strategy)
+                    .filter_by(id=trade_request.strategy_id)
+                    .first()
+                )
                 if not strategy:
                     logger.warning(f"Strategy {trade_request.strategy_id} not found")
                     return
-                
+
                 # Create trade record
                 trade = Trade(
                     strategy_id=trade_request.strategy_id,
                     exchange=strategy.exchange,
                     symbol=trade_request.symbol,
                     side=trade_request.side,
-                    type='market',  # Default to market for now
+                    type="market",  # Default to market for now
                     amount=Decimal(str(trade_request.quantity)),
-                    price=Decimal(str(trade_request.price)) if trade_request.price else None,
-                    status='pending' if validation_result.result == ValidationResult.APPROVED else 'rejected',
-                    error_message=validation_result.reasons[0] if validation_result.result != ValidationResult.APPROVED and validation_result.reasons else None
+                    price=(
+                        Decimal(str(trade_request.price))
+                        if trade_request.price
+                        else None
+                    ),
+                    status=(
+                        "pending"
+                        if validation_result.result == ValidationResult.APPROVED
+                        else "rejected"
+                    ),
+                    error_message=(
+                        validation_result.reasons[0]
+                        if validation_result.result != ValidationResult.APPROVED
+                        and validation_result.reasons
+                        else None
+                    ),
                 )
-                
+
                 session.add(trade)
                 session.commit()
-                
+
                 logger.info(
                     f"Trade saved to database",
                     extra={
                         "trade_id": trade.id,
                         "strategy_id": trade_request.strategy_id,
                         "symbol": trade_request.symbol,
-                        "status": trade.status
-                    }
+                        "status": trade.status,
+                    },
                 )
-                
+
         except Exception as e:
             logger.error(f"Failed to save trade to database: {e}")
-    
+
     def update_position_in_db(self, symbol: str, position_data: Dict[str, Any]) -> None:
         """Update position in database.
-        
+
         Args:
             symbol: Trading symbol
             position_data: Position information
@@ -1236,44 +1307,53 @@ class CapitalManager:
         try:
             if not self._db_connected:
                 return
-                
+
             with self._get_db_session() as session:
                 # Find existing position
-                position = session.query(Position)\
+                position = (
+                    session.query(Position)
                     .filter_by(
-                        strategy_id=position_data['strategy_id'],
+                        strategy_id=position_data["strategy_id"],
                         symbol=symbol,
-                        is_open=True
-                    ).first()
-                
+                        is_open=True,
+                    )
+                    .first()
+                )
+
                 if position:
                     # Update existing position
-                    position.current_size = Decimal(str(position_data['size']))
-                    position.unrealized_pnl = Decimal(str(position_data.get('unrealized_pnl', 0)))
-                    position.realized_pnl = Decimal(str(position_data.get('realized_pnl', 0)))
+                    position.current_size = Decimal(str(position_data["size"]))
+                    position.unrealized_pnl = Decimal(
+                        str(position_data.get("unrealized_pnl", 0))
+                    )
+                    position.realized_pnl = Decimal(
+                        str(position_data.get("realized_pnl", 0))
+                    )
                 else:
                     # Create new position
                     position = Position(
-                        strategy_id=position_data['strategy_id'],
-                        exchange='binance',  # Default for now
+                        strategy_id=position_data["strategy_id"],
+                        exchange="binance",  # Default for now
                         symbol=symbol,
-                        side=position_data['side'],
-                        entry_price=Decimal(str(position_data['entry_price'])),
-                        current_size=Decimal(str(position_data['size'])),
-                        avg_entry_price=Decimal(str(position_data['entry_price'])),
-                        unrealized_pnl=Decimal(str(position_data.get('unrealized_pnl', 0))),
-                        realized_pnl=Decimal(str(position_data.get('realized_pnl', 0)))
+                        side=position_data["side"],
+                        entry_price=Decimal(str(position_data["entry_price"])),
+                        current_size=Decimal(str(position_data["size"])),
+                        avg_entry_price=Decimal(str(position_data["entry_price"])),
+                        unrealized_pnl=Decimal(
+                            str(position_data.get("unrealized_pnl", 0))
+                        ),
+                        realized_pnl=Decimal(str(position_data.get("realized_pnl", 0))),
                     )
                     session.add(position)
-                
+
                 session.commit()
-                
+
         except Exception as e:
             logger.error(f"Failed to update position in database: {e}")
-    
+
     def log_risk_event_to_db(self, event_type: str, details: Dict[str, Any]) -> None:
         """Log risk management event to database.
-        
+
         Args:
             event_type: Type of risk event
             details: Event details
@@ -1281,22 +1361,22 @@ class CapitalManager:
         try:
             if not self._db_connected:
                 return
-                
+
             with self._get_db_session() as session:
                 log_entry = SystemLog(
                     level="WARNING" if "rejected" in event_type.lower() else "INFO",
                     logger_name="capital_manager.risk",
                     message=f"Risk event: {event_type}",
                     context=details,
-                    strategy_id=details.get('strategy_id')
+                    strategy_id=details.get("strategy_id"),
                 )
-                
+
                 session.add(log_entry)
                 session.commit()
-                
+
         except Exception as e:
             logger.error(f"Failed to log risk event: {e}")
-    
+
     @contextmanager
     def _get_db_session(self):
         """Get database session with proper cleanup."""

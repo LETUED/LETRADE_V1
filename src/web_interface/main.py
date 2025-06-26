@@ -13,19 +13,27 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Depends
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import uvicorn
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
+
+from common.config import Config
 
 # 프로젝트 임포트
 from common.message_bus import MessageBus
-from common.config import Config
 from telegram_interface.service_client import ServiceClient
 
 logger = logging.getLogger(__name__)
@@ -33,9 +41,10 @@ logger = logging.getLogger(__name__)
 # 보안 설정
 security = HTTPBearer(auto_error=False)
 
+
 class WebInterface:
     """바이낸스 스타일 웹 인터페이스 메인 클래스"""
-    
+
     def __init__(self):
         """웹 인터페이스 초기화"""
         self.app = FastAPI(
@@ -43,26 +52,26 @@ class WebInterface:
             description="바이낸스 스타일 전문 거래 대시보드",
             version="1.0.0",
             docs_url="/api/docs",
-            redoc_url="/api/redoc"
+            redoc_url="/api/redoc",
         )
-        
+
         # 실시간 연결 관리
         self.active_connections: List[WebSocket] = []
         self.message_bus: Optional[MessageBus] = None
         self.service_client: Optional[ServiceClient] = None
-        
+
         # 데이터 캐시
         self.data_cache = {
-            'market_data': {},
-            'portfolio': {},
-            'strategies': {},
-            'system_status': {},
-            'telegram_activity': []
+            "market_data": {},
+            "portfolio": {},
+            "strategies": {},
+            "system_status": {},
+            "telegram_activity": [],
         }
-        
+
         self._setup_middleware()
         self._setup_routes()
-        
+
     def _setup_middleware(self):
         """미들웨어 설정"""
         # CORS 설정
@@ -73,33 +82,33 @@ class WebInterface:
             allow_methods=["*"],
             allow_headers=["*"],
         )
-        
+
         # 요청 로깅 미들웨어
         @self.app.middleware("http")
         async def log_requests(request: Request, call_next):
             start_time = time.time()
             response = await call_next(request)
             process_time = time.time() - start_time
-            
+
             logger.info(
                 f"{request.method} {request.url.path} - "
                 f"{response.status_code} - {process_time:.3f}s"
             )
             return response
-    
+
     def _setup_routes(self):
         """라우트 설정"""
-        
+
         # 메인 대시보드
         @self.app.get("/", response_class=HTMLResponse)
         async def dashboard():
             return self._get_dashboard_html()
-        
+
         # WebSocket 엔드포인트
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             await self.connect_websocket(websocket)
-        
+
         # REST API 엔드포인트
         @self.app.get("/api/health")
         async def health_check():
@@ -110,10 +119,14 @@ class WebInterface:
                 "services": {
                     "web_interface": "running",
                     "websocket_connections": len(self.active_connections),
-                    "message_bus": "connected" if self.message_bus and self.message_bus.is_connected else "disconnected"
-                }
+                    "message_bus": (
+                        "connected"
+                        if self.message_bus and self.message_bus.is_connected
+                        else "disconnected"
+                    ),
+                },
             }
-        
+
         @self.app.get("/api/dashboard/data")
         async def get_dashboard_data():
             """대시보드 초기 데이터 제공"""
@@ -122,111 +135,125 @@ class WebInterface:
                 "portfolio": await self._get_portfolio_data(),
                 "strategies": await self._get_strategies_data(),
                 "system_status": await self._get_system_status(),
-                "telegram_activity": self.data_cache['telegram_activity'][-10:]  # 최근 10개
+                "telegram_activity": self.data_cache["telegram_activity"][
+                    -10:
+                ],  # 최근 10개
             }
-        
+
         @self.app.get("/api/market/{symbol}")
         async def get_market_data(symbol: str):
             """특정 심볼 시장 데이터"""
             return await self._get_symbol_market_data(symbol)
-        
+
         @self.app.get("/api/portfolio")
         async def get_portfolio():
             """포트폴리오 상세 정보"""
             return await self._get_portfolio_data()
-        
+
         @self.app.get("/api/strategies")
         async def get_strategies():
             """전략 목록 및 상태"""
             return await self._get_strategies_data()
-        
+
         @self.app.post("/api/strategy/{strategy_id}/start")
-        async def start_strategy(strategy_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+        async def start_strategy(
+            strategy_id: str,
+            credentials: HTTPAuthorizationCredentials = Depends(security),
+        ):
             """전략 시작"""
             if not await self._verify_token(credentials):
                 raise HTTPException(status_code=401, detail="Unauthorized")
-            
+
             result = await self._execute_strategy_action(strategy_id, "start")
-            
+
             # 텔레그램 알림
             await self._notify_telegram(f"전략 {strategy_id} 웹에서 시작됨")
-            
+
             return result
-        
+
         @self.app.post("/api/strategy/{strategy_id}/stop")
-        async def stop_strategy(strategy_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+        async def stop_strategy(
+            strategy_id: str,
+            credentials: HTTPAuthorizationCredentials = Depends(security),
+        ):
             """전략 중지"""
             if not await self._verify_token(credentials):
                 raise HTTPException(status_code=401, detail="Unauthorized")
-            
+
             result = await self._execute_strategy_action(strategy_id, "stop")
-            
+
             # 텔레그램 알림
             await self._notify_telegram(f"전략 {strategy_id} 웹에서 중지됨")
-            
+
             return result
-        
+
         @self.app.post("/api/system/emergency_stop")
-        async def emergency_stop(credentials: HTTPAuthorizationCredentials = Depends(security)):
+        async def emergency_stop(
+            credentials: HTTPAuthorizationCredentials = Depends(security),
+        ):
             """긴급 중지"""
             if not await self._verify_token(credentials):
                 raise HTTPException(status_code=401, detail="Unauthorized")
-            
+
             result = await self._execute_emergency_stop()
-            
+
             # 텔레그램 긴급 알림
             await self._notify_telegram("🚨 웹에서 긴급 중지 실행됨", priority="high")
-            
+
             return result
-        
+
         @self.app.post("/api/telegram/send")
         async def send_telegram_message(
-            request: Dict[str, Any], 
-            credentials: HTTPAuthorizationCredentials = Depends(security)
+            request: Dict[str, Any],
+            credentials: HTTPAuthorizationCredentials = Depends(security),
         ):
             """텔레그램 메시지 전송"""
             if not await self._verify_token(credentials):
                 raise HTTPException(status_code=401, detail="Unauthorized")
-            
+
             message = request.get("message", "")
             priority = request.get("priority", "normal")
-            
+
             result = await self._notify_telegram(message, priority)
-            
+
             # 활동 기록
-            self.data_cache['telegram_activity'].append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "type": "outgoing",
-                "message": message,
-                "source": "web_interface"
-            })
-            
+            self.data_cache["telegram_activity"].append(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "type": "outgoing",
+                    "message": message,
+                    "source": "web_interface",
+                }
+            )
+
             return {"success": True, "message_sent": message}
-    
+
     async def connect_websocket(self, websocket: WebSocket):
         """WebSocket 연결 관리"""
         await websocket.accept()
         self.active_connections.append(websocket)
-        
+
         logger.info(f"WebSocket 연결됨. 총 연결: {len(self.active_connections)}")
-        
+
         try:
             # 초기 데이터 전송
-            await self.send_to_websocket(websocket, {
-                "type": "initial_data",
-                "data": await self._get_dashboard_data()
-            })
-            
+            await self.send_to_websocket(
+                websocket,
+                {"type": "initial_data", "data": await self._get_dashboard_data()},
+            )
+
             # 연결 유지 및 메시지 수신
             while True:
                 try:
                     # 클라이언트로부터 메시지 수신 (ping/pong, 구독 요청 등)
-                    message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                    message = await asyncio.wait_for(
+                        websocket.receive_text(), timeout=30.0
+                    )
                     await self._handle_websocket_message(websocket, json.loads(message))
                 except asyncio.TimeoutError:
                     # 30초마다 ping 전송
                     await self.send_to_websocket(websocket, {"type": "ping"})
-                    
+
         except WebSocketDisconnect:
             logger.info("WebSocket 연결 해제됨")
         except Exception as e:
@@ -234,7 +261,7 @@ class WebInterface:
         finally:
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
-    
+
     async def send_to_websocket(self, websocket: WebSocket, data: Dict[str, Any]):
         """WebSocket으로 데이터 전송"""
         try:
@@ -243,12 +270,12 @@ class WebInterface:
             logger.error(f"WebSocket 전송 오류: {e}")
             if websocket in self.active_connections:
                 self.active_connections.remove(websocket)
-    
+
     async def broadcast_to_all(self, data: Dict[str, Any]):
         """모든 WebSocket 연결에 브로드캐스트"""
         if not self.active_connections:
             return
-        
+
         disconnected = []
         for websocket in self.active_connections:
             try:
@@ -256,45 +283,45 @@ class WebInterface:
             except Exception as e:
                 logger.error(f"브로드캐스트 오류: {e}")
                 disconnected.append(websocket)
-        
+
         # 연결 끊어진 WebSocket 제거
         for ws in disconnected:
             self.active_connections.remove(ws)
-    
-    async def _handle_websocket_message(self, websocket: WebSocket, message: Dict[str, Any]):
+
+    async def _handle_websocket_message(
+        self, websocket: WebSocket, message: Dict[str, Any]
+    ):
         """WebSocket 메시지 처리"""
         msg_type = message.get("type")
-        
+
         if msg_type == "pong":
             # Pong 응답 처리
             await self.send_to_websocket(websocket, {"type": "pong_ack"})
-        
+
         elif msg_type == "subscribe":
             # 특정 데이터 구독 요청
             topics = message.get("topics", [])
             # 구독 로직 구현
-            await self.send_to_websocket(websocket, {
-                "type": "subscription_confirmed",
-                "topics": topics
-            })
-        
+            await self.send_to_websocket(
+                websocket, {"type": "subscription_confirmed", "topics": topics}
+            )
+
         elif msg_type == "unsubscribe":
             # 구독 해제
             topics = message.get("topics", [])
-            await self.send_to_websocket(websocket, {
-                "type": "unsubscription_confirmed", 
-                "topics": topics
-            })
-    
+            await self.send_to_websocket(
+                websocket, {"type": "unsubscription_confirmed", "topics": topics}
+            )
+
     async def start_background_tasks(self):
         """백그라운드 작업 시작"""
         # 실시간 데이터 업데이트 태스크
         asyncio.create_task(self._data_update_loop())
-        
+
         # MessageBus 연결 및 리스너
         await self._connect_message_bus()
         asyncio.create_task(self._message_bus_listener())
-    
+
     async def _data_update_loop(self):
         """실시간 데이터 업데이트 루프"""
         while True:
@@ -302,79 +329,91 @@ class WebInterface:
                 # 시장 데이터 업데이트 (5초마다)
                 if int(time.time()) % 5 == 0:
                     market_data = await self._get_market_data()
-                    if market_data != self.data_cache['market_data']:
-                        self.data_cache['market_data'] = market_data
-                        await self.broadcast_to_all({
-                            "type": "market_update",
-                            "data": market_data,
-                            "timestamp": datetime.now(timezone.utc).isoformat()
-                        })
-                
+                    if market_data != self.data_cache["market_data"]:
+                        self.data_cache["market_data"] = market_data
+                        await self.broadcast_to_all(
+                            {
+                                "type": "market_update",
+                                "data": market_data,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            }
+                        )
+
                 # 포트폴리오 업데이트 (10초마다)
                 if int(time.time()) % 10 == 0:
                     portfolio_data = await self._get_portfolio_data()
-                    if portfolio_data != self.data_cache['portfolio']:
-                        self.data_cache['portfolio'] = portfolio_data
-                        await self.broadcast_to_all({
-                            "type": "portfolio_update",
-                            "data": portfolio_data,
-                            "timestamp": datetime.now(timezone.utc).isoformat()
-                        })
-                
+                    if portfolio_data != self.data_cache["portfolio"]:
+                        self.data_cache["portfolio"] = portfolio_data
+                        await self.broadcast_to_all(
+                            {
+                                "type": "portfolio_update",
+                                "data": portfolio_data,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            }
+                        )
+
                 # 시스템 상태 업데이트 (15초마다)
                 if int(time.time()) % 15 == 0:
                     system_status = await self._get_system_status()
-                    if system_status != self.data_cache['system_status']:
-                        self.data_cache['system_status'] = system_status
-                        await self.broadcast_to_all({
-                            "type": "system_update",
-                            "data": system_status,
-                            "timestamp": datetime.now(timezone.utc).isoformat()
-                        })
-                
+                    if system_status != self.data_cache["system_status"]:
+                        self.data_cache["system_status"] = system_status
+                        await self.broadcast_to_all(
+                            {
+                                "type": "system_update",
+                                "data": system_status,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            }
+                        )
+
                 await asyncio.sleep(1)  # 1초마다 체크
-                
+
             except Exception as e:
                 logger.error(f"데이터 업데이트 루프 오류: {e}")
                 await asyncio.sleep(5)
-    
+
     async def _connect_message_bus(self):
         """MessageBus 연결"""
         try:
             config = Config()
             message_bus_config = config.get_message_bus_config()
-            
+
             self.message_bus = MessageBus(message_bus_config)
             await self.message_bus.connect()
-            
+
             # ServiceClient 초기화
             self.service_client = ServiceClient(message_bus=self.message_bus)
-            
+
             logger.info("MessageBus 연결 완료")
-            
+
         except Exception as e:
             logger.error(f"MessageBus 연결 실패: {e}")
-    
+
     async def _message_bus_listener(self):
         """MessageBus 메시지 리스너"""
         if not self.message_bus:
             return
-        
+
         try:
             # 텔레그램 활동 모니터링
-            await self.message_bus.subscribe("telegram.activity.*", self._handle_telegram_activity)
-            
+            await self.message_bus.subscribe(
+                "telegram.activity.*", self._handle_telegram_activity
+            )
+
             # 전략 상태 변화 모니터링
-            await self.message_bus.subscribe("strategy.status.*", self._handle_strategy_status)
-            
+            await self.message_bus.subscribe(
+                "strategy.status.*", self._handle_strategy_status
+            )
+
             # 거래 실행 알림
-            await self.message_bus.subscribe("trade.executed", self._handle_trade_executed)
-            
+            await self.message_bus.subscribe(
+                "trade.executed", self._handle_trade_executed
+            )
+
             logger.info("MessageBus 리스너 시작됨")
-            
+
         except Exception as e:
             logger.error(f"MessageBus 리스너 오류: {e}")
-    
+
     async def _handle_telegram_activity(self, message: Dict[str, Any]):
         """텔레그램 활동 처리"""
         # 텔레그램 활동을 웹 인터페이스에 실시간 반영
@@ -382,49 +421,42 @@ class WebInterface:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "type": message.get("type", "unknown"),
             "content": message.get("content", ""),
-            "source": "telegram"
+            "source": "telegram",
         }
-        
-        self.data_cache['telegram_activity'].append(activity)
-        
+
+        self.data_cache["telegram_activity"].append(activity)
+
         # 최근 50개만 유지
-        if len(self.data_cache['telegram_activity']) > 50:
-            self.data_cache['telegram_activity'] = self.data_cache['telegram_activity'][-50:]
-        
+        if len(self.data_cache["telegram_activity"]) > 50:
+            self.data_cache["telegram_activity"] = self.data_cache["telegram_activity"][
+                -50:
+            ]
+
         # 웹 클라이언트에 브로드캐스트
-        await self.broadcast_to_all({
-            "type": "telegram_activity",
-            "data": activity
-        })
-    
+        await self.broadcast_to_all({"type": "telegram_activity", "data": activity})
+
     async def _handle_strategy_status(self, message: Dict[str, Any]):
         """전략 상태 변화 처리"""
         # 전략 상태 변화를 실시간 반영
-        await self.broadcast_to_all({
-            "type": "strategy_status_update",
-            "data": message
-        })
-    
+        await self.broadcast_to_all({"type": "strategy_status_update", "data": message})
+
     async def _handle_trade_executed(self, message: Dict[str, Any]):
         """거래 실행 처리"""
         # 거래 실행을 실시간 반영
-        await self.broadcast_to_all({
-            "type": "trade_executed",
-            "data": message
-        })
-    
+        await self.broadcast_to_all({"type": "trade_executed", "data": message})
+
     async def _get_market_data(self) -> Dict[str, Any]:
         """시장 데이터 조회 (실제 구현에서는 거래소 API 연동)"""
         # Mock 데이터 (실제 구현에서는 Exchange Connector 사용)
         import random
-        
+
         base_prices = {
             "BTCUSDT": 50000 + random.uniform(-1000, 1000),
             "ETHUSDT": 3000 + random.uniform(-100, 100),
             "ADAUSDT": 0.5 + random.uniform(-0.05, 0.05),
-            "BNBUSDT": 300 + random.uniform(-20, 20)
+            "BNBUSDT": 300 + random.uniform(-20, 20),
         }
-        
+
         market_data = {}
         for symbol, price in base_prices.items():
             change_24h = random.uniform(-5, 5)
@@ -436,11 +468,11 @@ class WebInterface:
                 "volume_24h": round(random.uniform(1000, 50000), 2),
                 "high_24h": round(price * 1.05, 2),
                 "low_24h": round(price * 0.95, 2),
-                "last_update": datetime.now(timezone.utc).isoformat()
+                "last_update": datetime.now(timezone.utc).isoformat(),
             }
-        
+
         return market_data
-    
+
     async def _get_portfolio_data(self) -> Dict[str, Any]:
         """포트폴리오 데이터 조회"""
         if self.service_client:
@@ -448,7 +480,7 @@ class WebInterface:
                 return await self.service_client.get_portfolio_status()
             except Exception as e:
                 logger.error(f"포트폴리오 데이터 조회 오류: {e}")
-        
+
         # Mock 데이터
         return {
             "total_value": 1234.56,
@@ -463,13 +495,13 @@ class WebInterface:
                     "entry_price": 50000.0,
                     "current_price": 50234.56,
                     "pnl": 0.23,
-                    "pnl_percent": 0.47
+                    "pnl_percent": 0.47,
                 }
             ],
             "trades_today": 3,
-            "win_rate": 66.7
+            "win_rate": 66.7,
         }
-    
+
     async def _get_strategies_data(self) -> Dict[str, Any]:
         """전략 데이터 조회"""
         if self.service_client:
@@ -477,7 +509,7 @@ class WebInterface:
                 return await self.service_client.get_strategies_status()
             except Exception as e:
                 logger.error(f"전략 데이터 조회 오류: {e}")
-        
+
         # Mock 데이터
         return {
             "active_strategies": 1,
@@ -492,11 +524,11 @@ class WebInterface:
                     "pnl_percent": 0.47,
                     "win_rate": 65.2,
                     "last_signal": "HOLD",
-                    "last_signal_time": datetime.now(timezone.utc).isoformat()
+                    "last_signal_time": datetime.now(timezone.utc).isoformat(),
                 }
-            ]
+            ],
         }
-    
+
     async def _get_system_status(self) -> Dict[str, Any]:
         """시스템 상태 조회"""
         return {
@@ -506,11 +538,13 @@ class WebInterface:
             "memory_usage_mb": 8.6,
             "avg_latency_ms": 1.921,
             "active_connections": len(self.active_connections),
-            "message_bus_connected": self.message_bus.is_connected if self.message_bus else False,
+            "message_bus_connected": (
+                self.message_bus.is_connected if self.message_bus else False
+            ),
             "telegram_connected": True,  # TODO: 실제 텔레그램 상태 확인
-            "last_update": datetime.now(timezone.utc).isoformat()
+            "last_update": datetime.now(timezone.utc).isoformat(),
         }
-    
+
     async def _get_symbol_market_data(self, symbol: str) -> Dict[str, Any]:
         """특정 심볼 상세 데이터"""
         market_data = await self._get_market_data()
@@ -518,8 +552,10 @@ class WebInterface:
             return market_data[symbol]
         else:
             raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
-    
-    async def _execute_strategy_action(self, strategy_id: str, action: str) -> Dict[str, Any]:
+
+    async def _execute_strategy_action(
+        self, strategy_id: str, action: str
+    ) -> Dict[str, Any]:
         """전략 액션 실행"""
         if self.service_client:
             try:
@@ -528,19 +564,21 @@ class WebInterface:
                 elif action == "stop":
                     return await self.service_client.stop_strategy(strategy_id)
                 else:
-                    raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+                    raise HTTPException(
+                        status_code=400, detail=f"Unknown action: {action}"
+                    )
             except Exception as e:
                 logger.error(f"전략 액션 실행 오류: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
-        
+
         # Mock 응답
         return {
             "success": True,
             "strategy_id": strategy_id,
             "action": action,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-    
+
     async def _execute_emergency_stop(self) -> Dict[str, Any]:
         """긴급 중지 실행"""
         if self.service_client:
@@ -549,40 +587,45 @@ class WebInterface:
             except Exception as e:
                 logger.error(f"긴급 중지 실행 오류: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
-        
+
         # Mock 응답
         return {
             "success": True,
             "action": "emergency_stop",
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-    
+
     async def _notify_telegram(self, message: str, priority: str = "normal") -> bool:
         """텔레그램 알림 전송"""
         if self.message_bus:
             try:
-                await self.message_bus.publish("telegram.notify", {
-                    "message": message,
-                    "priority": priority,
-                    "source": "web_interface",
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
+                await self.message_bus.publish(
+                    "telegram.notify",
+                    {
+                        "message": message,
+                        "priority": priority,
+                        "source": "web_interface",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
                 return True
             except Exception as e:
                 logger.error(f"텔레그램 알림 전송 오류: {e}")
                 return False
-        
+
         return False
-    
-    async def _verify_token(self, credentials: Optional[HTTPAuthorizationCredentials]) -> bool:
+
+    async def _verify_token(
+        self, credentials: Optional[HTTPAuthorizationCredentials]
+    ) -> bool:
         """JWT 토큰 검증 (간단한 구현)"""
         if not credentials:
             return False
-        
+
         # TODO: 실제 JWT 검증 구현
         # 현재는 개발용으로 간단한 토큰 체크
         return credentials.credentials == "letrade-web-token"
-    
+
     def _get_dashboard_html(self) -> str:
         """대시보드 HTML 생성"""
         return """
@@ -1334,28 +1377,27 @@ class WebInterface:
 </html>
         """
 
+
 # 웹 인터페이스 인스턴스 생성
 web_interface = WebInterface()
 app = web_interface.app
+
 
 async def startup_event():
     """서버 시작 시 실행"""
     logger.info("🚀 바이낸스 스타일 웹 인터페이스 시작")
     await web_interface.start_background_tasks()
 
+
 app.add_event_handler("startup", startup_event)
 
 if __name__ == "__main__":
     import os
-    
+
     # 환경 변수 설정
     host = os.getenv("WEB_HOST", "127.0.0.1")
     port = int(os.getenv("WEB_PORT", "8080"))
-    
+
     uvicorn.run(
-        "web_interface.main:app",
-        host=host,
-        port=port,
-        reload=True,
-        log_level="info"
+        "web_interface.main:app", host=host, port=port, reload=True, log_level="info"
     )

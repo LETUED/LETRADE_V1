@@ -6,4 +6,4 @@ Data Loader 패키지
 
 from .backtest_data_loader import BacktestDataLoader, DataSourceConfig
 
-__all__ = ['BacktestDataLoader', 'DataSourceConfig']
+__all__ = ["BacktestDataLoader", "DataSourceConfig"]

@@ -11,19 +11,19 @@ Key Features:
 - Integration with Core Engine via message bus
 """
 
-from .main import TelegramBot
 from .auth import AuthManager
 from .commands import CommandHandler
-from .notifications import NotificationManager
+from .main import TelegramBot
 from .message_integration import TelegramMessageIntegration
+from .notifications import NotificationManager
 
 __version__ = "0.1.0"
 __author__ = "Letrade Team"
 
 __all__ = [
     "TelegramBot",
-    "AuthManager", 
+    "AuthManager",
     "CommandHandler",
     "NotificationManager",
-    "TelegramMessageIntegration"
+    "TelegramMessageIntegration",
 ]

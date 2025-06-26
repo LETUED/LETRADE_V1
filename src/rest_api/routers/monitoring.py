@@ -5,20 +5,21 @@ Provides system status, metrics, alerts, and performance monitoring capabilities
 
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..auth.dependencies import require_monitoring_read
 from ..auth.jwt_auth import UserPayload
-from ..services.api_service import APIService
 from ..schemas.monitoring import (
-    SystemStatusResponse,
-    MetricsResponse,
-    PerformanceResponse,
+    AlertLevel,
     AlertResponse,
     LogResponse,
+    MetricsResponse,
+    PerformanceResponse,
     SystemConfigResponse,
-    AlertLevel
+    SystemStatusResponse,
 )
+from ..services.api_service import APIService
 
 logger = logging.getLogger(__name__)
 
@@ -28,29 +29,29 @@ router = APIRouter()
 @router.get("/status", response_model=SystemStatusResponse)
 async def get_system_status(
     current_user: UserPayload = Depends(require_monitoring_read),
-    api_service: APIService = Depends()
+    api_service: APIService = Depends(),
 ) -> SystemStatusResponse:
     """Get overall system status.
-    
+
     Args:
         current_user: Current authenticated user
         api_service: API service instance
-        
+
     Returns:
         SystemStatusResponse: System status information
-        
+
     Raises:
         HTTPException: If request fails
     """
     try:
         response = await api_service.get_system_status(current_user.user_id)
-        
-        if not response.get('success', True):
+
+        if not response.get("success", True):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=response.get('error', 'Failed to get system status')
+                detail=response.get("error", "Failed to get system status"),
             )
-        
+
         # Transform response data or provide mock data for MVP
         mock_status = {
             "overall_status": "healthy",
@@ -62,29 +63,29 @@ async def get_system_status(
                     "status": "online",
                     "uptime": 86400,
                     "last_heartbeat": "2024-06-24T05:41:00Z",
-                    "error_count": 0
+                    "error_count": 0,
                 },
                 {
                     "name": "Exchange Connector",
                     "status": "online",
                     "uptime": 86400,
                     "last_heartbeat": "2024-06-24T05:41:00Z",
-                    "error_count": 0
+                    "error_count": 0,
                 },
                 {
                     "name": "Capital Manager",
-                    "status": "online", 
+                    "status": "online",
                     "uptime": 86400,
                     "last_heartbeat": "2024-06-24T05:41:00Z",
-                    "error_count": 0
+                    "error_count": 0,
                 },
                 {
                     "name": "Message Bus",
                     "status": "online",
                     "uptime": 86400,
                     "last_heartbeat": "2024-06-24T05:41:00Z",
-                    "error_count": 0
-                }
+                    "error_count": 0,
+                },
             ],
             "cpu_usage": 25.5,
             "memory_usage": 60.2,
@@ -95,49 +96,51 @@ async def get_system_status(
             "daily_trades": 0,
             "market_data_lag": 50,
             "last_price_update": "2024-06-24T05:40:00Z",
-            "timestamp": "2024-06-24T05:41:00Z"
+            "timestamp": "2024-06-24T05:41:00Z",
         }
-        
+
         return SystemStatusResponse(**mock_status)
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting system status: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Internal server error",
         )
 
 
 @router.get("/metrics", response_model=MetricsResponse)
 async def get_system_metrics(
-    period: str = Query("hour", pattern="^(hour|day|week)$", description="Metrics period"),
+    period: str = Query(
+        "hour", pattern="^(hour|day|week)$", description="Metrics period"
+    ),
     current_user: UserPayload = Depends(require_monitoring_read),
-    api_service: APIService = Depends()
+    api_service: APIService = Depends(),
 ) -> MetricsResponse:
     """Get system performance metrics.
-    
+
     Args:
         period: Metrics collection period
         current_user: Current authenticated user
         api_service: API service instance
-        
+
     Returns:
         MetricsResponse: System metrics
-        
+
     Raises:
         HTTPException: If request fails
     """
     try:
         response = await api_service.get_system_metrics(current_user.user_id, period)
-        
-        if not response.get('success', True):
+
+        if not response.get("success", True):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=response.get('error', 'Failed to get system metrics')
+                detail=response.get("error", "Failed to get system metrics"),
             )
-        
+
         # Provide mock metrics for MVP
         mock_metrics = {
             "period": period,
@@ -160,37 +163,39 @@ async def get_system_metrics(
             "message_queue_depth": 2,
             "start_time": "2024-06-24T04:41:00Z",
             "end_time": "2024-06-24T05:41:00Z",
-            "collected_at": "2024-06-24T05:41:00Z"
+            "collected_at": "2024-06-24T05:41:00Z",
         }
-        
+
         return MetricsResponse(**mock_metrics)
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting system metrics: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Internal server error",
         )
 
 
 @router.get("/performance", response_model=PerformanceResponse)
 async def get_performance_summary(
-    period: str = Query("daily", pattern="^(daily|weekly|monthly)$", description="Performance period"),
+    period: str = Query(
+        "daily", pattern="^(daily|weekly|monthly)$", description="Performance period"
+    ),
     current_user: UserPayload = Depends(require_monitoring_read),
-    api_service: APIService = Depends()
+    api_service: APIService = Depends(),
 ) -> PerformanceResponse:
     """Get system performance summary.
-    
+
     Args:
         period: Performance calculation period
         current_user: Current authenticated user
         api_service: API service instance
-        
+
     Returns:
         PerformanceResponse: Performance summary
-        
+
     Raises:
         HTTPException: If request fails
     """
@@ -216,16 +221,16 @@ async def get_performance_summary(
             "win_rate": 0.0,
             "start_date": "2024-06-24",
             "end_date": "2024-06-24",
-            "calculated_at": "2024-06-24T05:41:00Z"
+            "calculated_at": "2024-06-24T05:41:00Z",
         }
-        
+
         return PerformanceResponse(**mock_performance)
-        
+
     except Exception as e:
         logger.error(f"Error getting performance summary: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Internal server error",
         )
 
 
@@ -236,10 +241,10 @@ async def get_system_alerts(
     offset: int = Query(0, ge=0, description="Number of alerts to skip"),
     unresolved_only: bool = Query(False, description="Return only unresolved alerts"),
     current_user: UserPayload = Depends(require_monitoring_read),
-    api_service: APIService = Depends()
+    api_service: APIService = Depends(),
 ) -> List[AlertResponse]:
     """Get system alerts.
-    
+
     Args:
         level: Optional alert level filter
         limit: Maximum number of alerts to return
@@ -247,36 +252,42 @@ async def get_system_alerts(
         unresolved_only: Filter for unresolved alerts only
         current_user: Current authenticated user
         api_service: API service instance
-        
+
     Returns:
         List[AlertResponse]: List of system alerts
-        
+
     Raises:
         HTTPException: If request fails
     """
     try:
         # For MVP, return empty alerts list
         return []
-        
+
     except Exception as e:
         logger.error(f"Error getting system alerts: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Internal server error",
         )
 
 
 @router.get("/logs", response_model=List[LogResponse])
 async def get_system_logs(
-    level: Optional[str] = Query(None, pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$", description="Filter by log level"),
+    level: Optional[str] = Query(
+        None,
+        pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$",
+        description="Filter by log level",
+    ),
     component: Optional[str] = Query(None, description="Filter by component"),
-    limit: int = Query(100, ge=1, le=1000, description="Number of log entries to return"),
+    limit: int = Query(
+        100, ge=1, le=1000, description="Number of log entries to return"
+    ),
     offset: int = Query(0, ge=0, description="Number of log entries to skip"),
     current_user: UserPayload = Depends(require_monitoring_read),
-    api_service: APIService = Depends()
+    api_service: APIService = Depends(),
 ) -> List[LogResponse]:
     """Get system logs.
-    
+
     Args:
         level: Optional log level filter
         component: Optional component filter
@@ -284,10 +295,10 @@ async def get_system_logs(
         offset: Number of log entries to skip
         current_user: Current authenticated user
         api_service: API service instance
-        
+
     Returns:
         List[LogResponse]: List of log entries
-        
+
     Raises:
         HTTPException: If request fails
     """
@@ -299,58 +310,60 @@ async def get_system_logs(
                 "level": "INFO",
                 "message": "System started successfully",
                 "component": "Core Engine",
-                "timestamp": "2024-06-24T05:41:00Z"
+                "timestamp": "2024-06-24T05:41:00Z",
             },
             {
                 "id": 2,
                 "level": "INFO",
                 "message": "Exchange connector initialized",
                 "component": "Exchange Connector",
-                "timestamp": "2024-06-24T05:40:30Z"
+                "timestamp": "2024-06-24T05:40:30Z",
             },
             {
                 "id": 3,
                 "level": "INFO",
                 "message": "Message bus connected",
                 "component": "Message Bus",
-                "timestamp": "2024-06-24T05:40:15Z"
-            }
+                "timestamp": "2024-06-24T05:40:15Z",
+            },
         ]
-        
+
         # Apply filters
         filtered_logs = mock_logs
         if level:
             filtered_logs = [log for log in filtered_logs if log["level"] == level]
         if component:
-            filtered_logs = [log for log in filtered_logs if log["component"] == component]
-        
+            filtered_logs = [
+                log for log in filtered_logs if log["component"] == component
+            ]
+
         # Apply pagination
-        filtered_logs = filtered_logs[offset:offset + limit]
-        
+        filtered_logs = filtered_logs[offset : offset + limit]
+
         return [LogResponse(**log) for log in filtered_logs]
-        
+
     except Exception as e:
         logger.error(f"Error getting system logs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Internal server error",
         )
 
 
 @router.get("/config", response_model=SystemConfigResponse)
 async def get_system_config(
     current_user: UserPayload = Depends(require_monitoring_read),
-    api_service: APIService = Depends()
+    api_service: APIService = Depends(),
 ) -> SystemConfigResponse:
     """Get system configuration.
-    
+
     Args:
         current_user: Current authenticated user
         api_service: API service instance
-        
+
     Returns:
         SystemConfigResponse: System configuration
-        
+
     Raises:
         HTTPException: If request fails
     """
@@ -362,46 +375,42 @@ async def get_system_config(
             "exchange_config": {
                 "default_exchange": "binance",
                 "sandbox_mode": True,
-                "rate_limit": 1200
+                "rate_limit": 1200,
             },
             "message_bus_config": {
                 "host": "localhost",
                 "port": 5672,
                 "virtual_host": "/",
-                "connection_timeout": 30
+                "connection_timeout": 30,
             },
             "database_config": {
                 "engine": "postgresql",
                 "pool_size": 10,
-                "max_overflow": 20
+                "max_overflow": 20,
             },
             "default_risk_limits": {
                 "max_position_size_pct": 10.0,
                 "max_daily_loss_pct": 5.0,
                 "max_total_loss_pct": 20.0,
-                "max_leverage": 3.0
+                "max_leverage": 3.0,
             },
-            "trading_hours": {
-                "start": "00:00",
-                "end": "23:59",
-                "timezone": "UTC"
-            },
+            "trading_hours": {"start": "00:00", "end": "23:59", "timezone": "UTC"},
             "supported_exchanges": ["binance", "binance_testnet"],
             "supported_symbols": ["BTCUSDT", "ETHUSDT", "ADAUSDT"],
             "features": {
                 "live_trading": False,
                 "backtesting": True,
                 "telegram_notifications": True,
-                "email_notifications": False
+                "email_notifications": False,
             },
-            "updated_at": "2024-06-24T05:41:00Z"
+            "updated_at": "2024-06-24T05:41:00Z",
         }
-        
+
         return SystemConfigResponse(**mock_config)
-        
+
     except Exception as e:
         logger.error(f"Error getting system config: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Internal server error",
         )

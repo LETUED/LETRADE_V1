@@ -12,16 +12,11 @@ Key Features:
 - Integration with Core Engine via message bus
 """
 
-from .main import app, create_app
 from .auth.jwt_auth import JWTAuthHandler
+from .main import app, create_app
 from .services.api_service import APIService
 
 __version__ = "0.1.0"
 __author__ = "Letrade Team"
 
-__all__ = [
-    "app",
-    "create_app", 
-    "JWTAuthHandler",
-    "APIService"
-]
+__all__ = ["app", "create_app", "JWTAuthHandler", "APIService"]

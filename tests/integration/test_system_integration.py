@@ -15,11 +15,7 @@ from src.exchange_connector.main import (
     OrderSide,
     OrderType,
 )
-from src.strategies.base_strategy import (
-    BaseStrategy,
-    StrategyConfig,
-    TradingSignal,
-)
+from src.strategies.base_strategy import BaseStrategy, StrategyConfig, TradingSignal
 
 
 class MockStrategy(BaseStrategy):
