@@ -1,0 +1,222 @@
+# =============================================================================
+# Letrade_v1 소액 실거래 테스트 설정 (Live Trading Test Configuration)
+# 총 리스크: $100 USD
+# =============================================================================
+
+# 시스템 설정
+system:
+  name: "Letrade_v1_LiveTest"
+  version: "0.1.0"
+  timezone: "UTC"
+  startup_timeout: 30
+  shutdown_timeout: 10
+  mode: "live_testing"  # 특별 모드 식별자
+
+# 실거래 테스트 전용 로깅
+logging:
+  level: "INFO"
+  format: "json"
+  handlers:
+    - type: "console"
+      level: "INFO"
+    - type: "file"
+      level: "DEBUG"
+      filename: "logs/live_test.log"
+      max_bytes: 10485760  # 10MB
+      backup_count: 10  # 더 많은 백업 유지
+  loggers:
+    - name: "letrade"
+      level: "INFO"
+    - name: "ccxt"
+      level: "INFO"  # 실거래에서는 더 자세한 로깅
+    - name: "live_trading"
+      level: "DEBUG"
+
+# 데이터베이스 설정
+database:
+  pool_size: 5
+  max_overflow: 10
+  pool_pre_ping: true
+  pool_recycle: 3600
+  echo: false
+
+# 메시지 버스 설정  
+message_bus:
+  exchange_name: "letrade_live_test"
+  exchange_type: "topic"
+  queue_ttl: 1800000  # 30분 (짧게)
+  message_ttl: 300000  # 5분 (짧게)
+  prefetch_count: 5
+  
+  routing_keys:
+    market_data: "market_data.{exchange}.{symbol}"
+    trade_commands: "commands.execute_trade"
+    capital_requests: "request.capital.allocation.{strategy_id}"
+    system_events: "events.system.{event_type}"
+    trade_events: "events.trade.{event_type}"
+
+# 매우 보수적인 거래 설정 (총 자본 $100 기준)
+trading:
+  # 극도로 보수적인 리스크 관리
+  risk_management:
+    max_position_size_percent: 1.0      # 최대 1% 포지션 (=$1)
+    max_daily_loss_percent: 0.5         # 하루 최대 손실 0.5% (=$0.50)
+    max_portfolio_exposure_percent: 2.0 # 최대 노출 2% (=$2)
+    stop_loss_percent: 0.5              # 0.5% 손절 (=$0.50)
+    max_leverage: 1.0                   # 레버리지 금지
+    
+  # 소액 포지션 사이징
+  position_sizing:
+    default_model: "fixed_fractional"
+    default_risk_percent: 0.5           # 0.5% 리스크
+    min_position_size_usd: 1.0          # 최소 $1
+    max_position_size_usd: 2.0          # 최대 $2
+    
+  # 실행 설정
+  execution:
+    order_timeout: 60                   # 더 긴 타임아웃
+    retry_attempts: 5                   # 더 많은 재시도
+    retry_delay: 2.0                    # 더 긴 대기
+    slippage_tolerance: 0.002           # 더 관대한 슬리피지
+
+# 전략 설정 (매우 보수적)
+strategies:
+  # 이동평균 교차 전략 (보수적 설정)
+  ma_crossover:
+    fast_period: 50
+    slow_period: 200
+    min_volume_24h: 10000000           # 높은 유동성 요구 ($10M)
+    max_active_positions: 1            # 동시 포지션 1개만
+    
+  # 전략 실행 설정
+  execution:
+    max_concurrent_strategies: 1        # 전략 1개만 실행
+    worker_memory_limit_mb: 128
+    worker_cpu_limit_percent: 30
+    heartbeat_interval: 15              # 더 자주 헬스체크
+
+# 거래소 설정 (실제 Binance)
+exchanges:
+  binance:
+    name: "Binance"
+    enabled: true
+    testnet: false                      # 실제 거래소 사용
+    sandbox: false
+    rate_limits:
+      requests_per_minute: 600          # 보수적인 레이트 제한
+      orders_per_second: 2              # 느린 주문 속도
+      orders_per_day: 100               # 하루 최대 100개 주문
+    features:
+      spot_trading: true
+      futures_trading: false            # 선물 거래 비활성화
+      staking: false
+      websocket: true
+    # 승인된 심볼만 거래 (고유동성)
+    allowed_symbols:
+      - "BTCUSDT"
+      - "ETHUSDT"
+      - "BNBUSDT"
+
+# 강화된 모니터링 설정
+monitoring:
+  prometheus:
+    enabled: true
+    port: 8000
+    path: "/metrics"
+    
+  healthcheck:
+    enabled: true
+    port: 8080
+    path: "/health"
+    interval: 10                        # 10초마다 헬스체크
+    
+  metrics:
+    - name: "live_trades_total"
+      type: "counter"
+      description: "Total live trades executed"
+    - name: "live_position_pnl"
+      type: "gauge"
+      description: "Live position PnL"
+    - name: "live_portfolio_value"
+      type: "gauge"
+      description: "Live portfolio value"
+    - name: "strategy_execution_time"
+      type: "histogram"
+      description: "Strategy execution time"
+    - name: "risk_violations"
+      type: "counter"
+      description: "Risk limit violations"
+
+# 텔레그램 알림 (실거래 전용)
+telegram:
+  enabled: true
+  commands:
+    - "/start"
+    - "/status"
+    - "/portfolio"
+    - "/positions"
+    - "/profit"
+    - "/emergency_stop"                 # 긴급 정지 명령
+    - "/help"
+  notifications:
+    trade_executed: true
+    position_opened: true
+    position_closed: true
+    risk_alert: true
+    system_error: true
+    profit_threshold: true              # 수익 임계값 알림
+    loss_threshold: true                # 손실 임계값 알림
+
+# 실거래 테스트 전용 설정
+live_testing:
+  enabled: true
+  total_capital: 100.0                  # 총 자본 $100
+  daily_loss_limit: 0.50               # 하루 최대 손실 $0.50
+  total_loss_limit: 5.0                # 총 최대 손실 $5.0
+  auto_stop_on_limit: true             # 한계 도달시 자동 정지
+  
+  # 안전 장치
+  safety_mechanisms:
+    max_trades_per_day: 10              # 하루 최대 10개 거래
+    max_consecutive_losses: 3           # 연속 손실 3회 제한
+    cooling_period_hours: 1             # 손실 후 1시간 대기
+    
+  # 승인 시스템
+  approval_required:
+    position_size_above: 1.5            # $1.50 이상 포지션은 승인 필요
+    daily_trades_above: 5               # 하루 5개 이상 거래는 승인 필요
+    
+# 비상 정지 설정
+emergency_stop:
+  enabled: true
+  triggers:
+    portfolio_loss_percent: 5.0         # 5% 손실시 비상 정지
+    consecutive_errors: 5               # 연속 5회 오류시 정지
+    system_memory_percent: 90           # 메모리 90% 사용시 정지
+  
+  actions:
+    close_all_positions: true           # 모든 포지션 청산
+    stop_all_strategies: true           # 모든 전략 정지
+    send_telegram_alert: true           # 텔레그램 긴급 알림
+    
+# 백업 및 복구
+backup:
+  enabled: true
+  interval_minutes: 5                   # 5분마다 백업
+  keep_backups: 24                      # 24개 백업 유지 (2시간)
+  backup_location: "backups/live_test/"
+
+# 감사 로깅 (모든 거래 기록)
+audit:
+  enabled: true
+  log_file: "logs/audit_live_test.log"
+  include_fields:
+    - timestamp
+    - user_id
+    - action
+    - symbol
+    - quantity
+    - price
+    - pnl
+    - portfolio_value
+    - risk_metrics

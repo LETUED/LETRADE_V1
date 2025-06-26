@@ -26,8 +26,54 @@ from strategy_worker.main import StrategyWorkerManager  # noqa: E402
 from strategies.ma_crossover import MAcrossoverStrategy  # noqa: E402
 from strategies.base_strategy import StrategyConfig  # noqa: E402
 from common.state_reconciliation import StateReconciliationEngine  # noqa: E402
+from capital_manager.main import CapitalManager  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+
+class SystemEventObserver:
+    """Observer interface for system events."""
+    
+    async def on_strategy_started(self, strategy_id: str) -> None:
+        """Called when a strategy starts."""
+        pass
+    
+    async def on_strategy_stopped(self, strategy_id: str) -> None:
+        """Called when a strategy stops."""
+        pass
+    
+    async def on_trade_executed(self, trade_data: Dict[str, Any]) -> None:
+        """Called when a trade is executed."""
+        pass
+    
+    async def on_system_error(self, error_data: Dict[str, Any]) -> None:
+        """Called when a system error occurs."""
+        pass
+
+
+class ComponentFactory:
+    """Factory for creating system components with dependency injection."""
+    
+    @staticmethod
+    def create_strategy_worker_manager(message_bus: MessageBus) -> StrategyWorkerManager:
+        """Create strategy worker manager with message bus."""
+        return StrategyWorkerManager(message_bus=message_bus)
+    
+    @staticmethod
+    def create_state_reconciliation_engine(exchange_connector, capital_manager) -> StateReconciliationEngine:
+        """Create state reconciliation engine with dependencies."""
+        return StateReconciliationEngine(
+            exchange_connector=exchange_connector,
+            capital_manager=capital_manager
+        )
+    
+    @staticmethod
+    async def create_message_bus(config: Dict[str, Any]) -> MessageBus:
+        """Create and connect message bus."""
+        message_bus = create_message_bus(config)
+        if not await message_bus.connect():
+            raise Exception("Failed to connect to message bus")
+        return message_bus
 
 
 @dataclass
@@ -51,6 +97,8 @@ class CoreEngine:
     - Message bus coordination
     - State reconciliation
     - Risk management oversight
+    
+    Implements Observer Pattern for system events.
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -64,13 +112,19 @@ class CoreEngine:
         self._shutdown_event = asyncio.Event()
         self._tasks: List[asyncio.Task] = []
         self._signal_received = False
+        
+        # Observer Pattern implementation
+        self._observers: List[SystemEventObserver] = []
 
-        # Component references (will be injected)
+        # Component references (will be injected via Factory)
         self.strategy_worker_manager: Optional[StrategyWorkerManager] = None
         self.capital_manager = None
         self.exchange_connector = None
         self.message_bus: Optional[MessageBus] = None
         self.state_reconciliation_engine = None
+        
+        # Component Factory
+        self.component_factory = ComponentFactory()
 
         logger.info(
             "Core Engine initialized",
@@ -79,6 +133,32 @@ class CoreEngine:
                 "config_keys": list(self.config.keys()) if self.config else [],
             },
         )
+    
+    def add_observer(self, observer: SystemEventObserver) -> None:
+        """Add system event observer."""
+        self._observers.append(observer)
+        logger.debug(f"Added observer: {observer.__class__.__name__}")
+    
+    def remove_observer(self, observer: SystemEventObserver) -> None:
+        """Remove system event observer."""
+        if observer in self._observers:
+            self._observers.remove(observer)
+            logger.debug(f"Removed observer: {observer.__class__.__name__}")
+    
+    async def _notify_observers(self, event_type: str, **kwargs) -> None:
+        """Notify all observers of system events."""
+        for observer in self._observers:
+            try:
+                if event_type == "strategy_started":
+                    await observer.on_strategy_started(kwargs.get("strategy_id"))
+                elif event_type == "strategy_stopped":
+                    await observer.on_strategy_stopped(kwargs.get("strategy_id"))
+                elif event_type == "trade_executed":
+                    await observer.on_trade_executed(kwargs.get("trade_data"))
+                elif event_type == "system_error":
+                    await observer.on_system_error(kwargs.get("error_data"))
+            except Exception as e:
+                logger.error(f"Observer notification failed: {e}")
 
     async def start(self) -> bool:
         """Start the Core Engine and all subsystems.
@@ -297,6 +377,9 @@ class CoreEngine:
                 if success:
                     self.status.active_strategies.add(strategy_config.strategy_id)
                     
+                    # Notify observers
+                    await self._notify_observers("strategy_started", strategy_id=strategy_config.strategy_id)
+                    
                     logger.info(
                         f"Strategy {strategy_config.strategy_id} started successfully",
                         extra={
@@ -340,6 +423,9 @@ class CoreEngine:
             
             if success:
                 self.status.active_strategies.discard(strategy_id)
+                
+                # Notify observers
+                await self._notify_observers("strategy_stopped", strategy_id=strategy_id)
                 
                 logger.info(
                     f"Strategy {strategy_id} stopped successfully",
@@ -441,20 +527,77 @@ class CoreEngine:
         """Validate conditions required for startup."""
         logger.info("Validating startup conditions", extra={"component": "core_engine"})
 
-        # TODO: Implement actual validation
-        # - Database connectivity
-        # - Message bus connectivity
-        # - Required configuration presence
-        # - External API connectivity
+        validation_results = {
+            "database": False,
+            "message_bus": False,
+            "configuration": False,
+            "exchange_api": False
+        }
 
-        return True
+        # 1. Database connectivity check
+        try:
+            from src.common.db_session import db_session
+            db_session.initialize()
+            if db_session.check_connection():
+                validation_results["database"] = True
+                logger.info("✓ Database connection validated")
+            else:
+                logger.error("✗ Database connection failed")
+        except Exception as e:
+            logger.error(f"✗ Database validation error: {e}")
+
+        # 2. Message bus connectivity check
+        try:
+            # 메시지 버스는 초기화 단계에서 확인
+            validation_results["message_bus"] = True
+            logger.info("✓ Message bus validation deferred to initialization")
+        except Exception as e:
+            logger.error(f"✗ Message bus validation error: {e}")
+
+        # 3. Required configuration presence
+        try:
+            required_configs = ["exchange", "symbol", "capital_limits"]
+            missing_configs = []
+            
+            for config_key in required_configs:
+                if config_key not in self.config:
+                    missing_configs.append(config_key)
+            
+            if not missing_configs:
+                validation_results["configuration"] = True
+                logger.info("✓ Required configuration validated")
+            else:
+                logger.error(f"✗ Missing configurations: {missing_configs}")
+        except Exception as e:
+            logger.error(f"✗ Configuration validation error: {e}")
+
+        # 4. External API connectivity (exchange)
+        try:
+            # 실제 API 연결은 Exchange Connector 초기화시 확인
+            validation_results["exchange_api"] = True
+            logger.info("✓ Exchange API validation deferred to initialization")
+        except Exception as e:
+            logger.error(f"✗ Exchange API validation error: {e}")
+
+        # 전체 검증 결과
+        all_valid = all(validation_results.values())
+        
+        logger.info(
+            f"Startup validation {'PASSED' if all_valid else 'FAILED'}",
+            extra={
+                "component": "core_engine",
+                "validation_results": validation_results
+            }
+        )
+
+        return all_valid
 
     async def _initialize_subsystems(self):
-        """Initialize all subsystem components."""
+        """Initialize all subsystem components using Factory Pattern."""
         logger.info("Initializing subsystems", extra={"component": "core_engine"})
 
         try:
-            # Initialize message bus first (other components depend on it)
+            # Initialize message bus first using Factory (other components depend on it)
             message_bus_config = self.config.get(
                 "message_bus",
                 {
@@ -466,7 +609,7 @@ class CoreEngine:
                 },
             )
 
-            self.message_bus = await create_message_bus(message_bus_config)
+            self.message_bus = await self.component_factory.create_message_bus(message_bus_config)
             logger.info(
                 "Message bus initialized successfully",
                 extra={"component": "core_engine"},
@@ -475,8 +618,8 @@ class CoreEngine:
             # Setup message handlers
             await self._setup_message_handlers()
 
-            # Initialize Strategy Worker Manager
-            self.strategy_worker_manager = StrategyWorkerManager(
+            # Initialize Strategy Worker Manager using Factory
+            self.strategy_worker_manager = self.component_factory.create_strategy_worker_manager(
                 message_bus=self.message_bus
             )
             logger.info(
@@ -510,11 +653,34 @@ class CoreEngine:
                 )
                 self.exchange_connector = None
             
-            # TODO: Initialize Capital Manager when available
-            # self.capital_manager = CapitalManager(
-            #     self.config.get("capital_manager", {}),
-            #     message_bus=self.message_bus
-            # )
+            # Initialize Capital Manager
+            capital_config = self.config.get("capital_manager", {
+                "max_position_size_pct": 10.0,
+                "max_portfolio_risk_pct": 20.0,
+                "stop_loss_pct": 2.0,
+                "daily_loss_limit_pct": 5.0
+            })
+            
+            self.capital_manager = CapitalManager(
+                message_bus=self.message_bus,
+                config=capital_config
+            )
+            
+            logger.info(
+                "Capital Manager initialized successfully",
+                extra={"component": "core_engine", "config": capital_config}
+            )
+            
+            # Initialize State Reconciliation Engine using Factory when components are ready
+            if self.exchange_connector and self.capital_manager:
+                self.state_reconciliation_engine = self.component_factory.create_state_reconciliation_engine(
+                    exchange_connector=self.exchange_connector,
+                    capital_manager=self.capital_manager
+                )
+                logger.info(
+                    "State Reconciliation Engine initialized successfully",
+                    extra={"component": "core_engine"},
+                )
 
             logger.info("Subsystems initialized", extra={"component": "core_engine"})
 

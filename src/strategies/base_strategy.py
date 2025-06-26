@@ -21,7 +21,9 @@ from contextlib import contextmanager
 
 import pandas as pd
 
-from common.database import Strategy, PerformanceMetric, db_manager
+# 데이터베이스 연동
+from src.common.db_session import db_session
+from src.common.models import Strategy, PerformanceMetric
 
 logger = logging.getLogger(__name__)
 
@@ -164,14 +166,8 @@ class PerformanceTracker:
     @contextmanager
     def _get_db_session(self):
         """Get database session with proper cleanup."""
-        session = db_manager.get_session()
-        try:
+        with db_session.get_db() as session:
             yield session
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
 
 
 class SignalType(Enum):
@@ -539,30 +535,59 @@ class BaseStrategy(ABC):
             bool: 저장 성공 여부
         """
         try:
-            # TODO: 실제 데이터베이스 연동 구현 필요
-            # strategies 테이블에 현재 상태 저장
-            strategy_state = {
-                "id": self.strategy_id,
-                "name": self.name,
-                "strategy_type": "MA_CROSSOVER",
-                "parameters": {
-                    "fast_period": getattr(self, 'fast_period', 50),
-                    "slow_period": getattr(self, 'slow_period', 200)
-                },
-                "is_active": self.is_running,
-                "last_signal_time": (
-                    self._last_signal_time.isoformat() 
-                    if self._last_signal_time else None
-                ),
-                "performance_metrics": self.get_performance_metrics(),
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }
-            
-            logger.debug(
-                f"Strategy state saved for {self.strategy_id}",
-                extra={"state": strategy_state}
-            )
-            
+            # 데이터베이스 세션이 초기화되지 않았으면 건너뛰기
+            if not db_session._initialized:
+                logger.warning("Database session not initialized, skipping state save")
+                return True
+                
+            with db_session.get_db() as db:
+                # 기존 전략 레코드 찾기 또는 생성
+                strategy = db.query(Strategy).filter_by(name=self.strategy_id).first()
+                
+                if not strategy:
+                    # 새 전략 생성
+                    strategy = Strategy(
+                        name=self.strategy_id,
+                        strategy_type=self.config.get('strategy_type', 'MA_CROSSOVER'),
+                        exchange=self.config.get('exchange', 'binance'),
+                        symbol=self.config.get('symbol', 'BTC/USDT'),
+                        parameters={
+                            "fast_period": getattr(self, 'fast_period', 50),
+                            "slow_period": getattr(self, 'slow_period', 200)
+                        },
+                        is_active=self.is_running
+                    )
+                    db.add(strategy)
+                else:
+                    # 기존 전략 업데이트
+                    strategy.is_active = self.is_running
+                    strategy.parameters = {
+                        "fast_period": getattr(self, 'fast_period', 50),
+                        "slow_period": getattr(self, 'slow_period', 200),
+                        "last_signal_time": (
+                            self._last_signal_time.isoformat() 
+                            if self._last_signal_time else None
+                        )
+                    }
+                
+                # 성능 메트릭 저장
+                metrics = self.get_performance_metrics()
+                for metric_name, metric_value in metrics.items():
+                    if isinstance(metric_value, (int, float)):
+                        metric_record = PerformanceMetric(
+                            strategy_id=strategy.id,
+                            metric_name=metric_name,
+                            metric_value=float(metric_value)
+                        )
+                        db.add(metric_record)
+                
+                db.commit()
+                
+                logger.debug(
+                    f"Strategy state saved to database for {self.strategy_id}",
+                    extra={"strategy_id": strategy.id}
+                )
+                
             return True
             
         except Exception as e:
@@ -580,10 +605,38 @@ class BaseStrategy(ABC):
             bool: 로드 성공 여부
         """
         try:
-            # TODO: 실제 데이터베이스 연동 구현 필요
-            # strategies 테이블에서 상태 로드
-            
-            logger.debug(f"Strategy state loaded for {self.strategy_id}")
+            # 데이터베이스 세션이 초기화되지 않았으면 건너뛰기
+            if not db_session._initialized:
+                logger.warning("Database session not initialized, skipping state load")
+                return True
+                
+            with db_session.get_db() as db:
+                # 전략 레코드 찾기
+                strategy = db.query(Strategy).filter_by(name=self.strategy_id).first()
+                
+                if strategy:
+                    # 파라미터 복원
+                    if strategy.parameters:
+                        params = strategy.parameters
+                        if 'fast_period' in params:
+                            self.fast_period = params['fast_period']
+                        if 'slow_period' in params:
+                            self.slow_period = params['slow_period']
+                        if 'last_signal_time' in params and params['last_signal_time']:
+                            self._last_signal_time = datetime.fromisoformat(params['last_signal_time'])
+                    
+                    # 활성 상태 복원
+                    if strategy.is_active and not self.is_running:
+                        logger.info(f"Resuming active strategy {self.strategy_id}")
+                        self.is_running = True
+                    
+                    logger.debug(
+                        f"Strategy state loaded from database for {self.strategy_id}",
+                        extra={"strategy_id": strategy.id, "is_active": strategy.is_active}
+                    )
+                else:
+                    logger.info(f"No existing state found for strategy {self.strategy_id}")
+                    
             return True
             
         except Exception as e:
@@ -786,14 +839,8 @@ class BaseStrategy(ABC):
     @contextmanager 
     def _get_db_session(self):
         """Get database session with proper cleanup."""
-        session = db_manager.get_session()
-        try:
+        with db_session.get_db() as session:
             yield session
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
 
 
 # Utility functions for strategy development with pandas-ta integration

@@ -460,193 +460,225 @@ class StrategyWorker:
             strategy_config: 전략 설정
             worker_config: Worker 설정
         """
+        runner = StrategyProcessRunner(
+            strategy_class=strategy_class,
+            strategy_config=strategy_config,
+            worker_config=worker_config
+        )
+        runner.run()
+
+
+class StrategyProcessRunner:
+    """전략 프로세스 실행을 담당하는 분리된 클래스"""
+    
+    def __init__(
+        self,
+        strategy_class: Type[BaseStrategy],
+        strategy_config: StrategyConfig,
+        worker_config: WorkerConfig
+    ):
+        self.strategy_class = strategy_class
+        self.strategy_config = strategy_config
+        self.worker_config = worker_config
+        self.loop = None
+        self.strategy = None
+        self.message_bus = None
+    
+    def run(self):
+        """프로세스 실행 진입점"""
         # 프로세스 내부에서 새로운 이벤트 루프 생성
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
         
         try:
-            # 시그널 핸들러 설정
-            def signal_handler(signum, frame):
-                logger.info(f"Strategy process {os.getpid()} received signal {signum}")
-                loop.stop()
-            
-            signal.signal(signal.SIGTERM, signal_handler)
-            signal.signal(signal.SIGINT, signal_handler)
-            
-            # 전략 실행 태스크 생성
-            async def run_strategy():
-                strategy = None
-                message_bus = None
-                
-                try:
-                    # 전략 인스턴스 생성
-                    strategy = strategy_class(strategy_config)
-                    
-                    # 메시지 버스 설정 및 연결
-                    message_bus_config = {
-                        "host": os.getenv("RABBITMQ_HOST", "localhost"),
-                        "port": int(os.getenv("RABBITMQ_PORT", 5672)),
-                        "username": os.getenv("RABBITMQ_USERNAME", "guest"),
-                        "password": os.getenv("RABBITMQ_PASSWORD", "guest"),
-                        "virtual_host": os.getenv("RABBITMQ_VHOST", "/")
-                    }
-                    
-                    # Message Bus import 및 연결
-                    from src.common.message_bus import MessageBus
-                    message_bus = MessageBus(message_bus_config)
-                    
-                    if not await message_bus.connect():
-                        logger.error("Failed to connect to message bus")
-                        return
-                    
-                    # 전략 시작
-                    if not await strategy.start():
-                        logger.error(f"Failed to start strategy {strategy_config.strategy_id}")
-                        return
-                    
-                    logger.info(
-                        f"Strategy {strategy_config.strategy_id} running in process {os.getpid()}",
-                        extra={
-                            "strategy_id": strategy_config.strategy_id,
-                            "process_id": os.getpid(),
-                            "dry_run": strategy_config.dry_run
-                        }
-                    )
-                    
-                    # 시장 데이터 구독 및 처리
-                    subscriptions = strategy.get_required_subscriptions()
-                    
-                    async def handle_market_data(message_data):
-                        """시장 데이터 수신 및 전략 처리"""
-                        try:
-                            payload = message_data.get("payload", {})
-                            routing_key = message_data.get("routing_key", "")
-                            
-                            logger.debug(
-                                f"Received market data for {strategy_config.strategy_id}",
-                                extra={
-                                    "routing_key": routing_key,
-                                    "payload_keys": list(payload.keys())
-                                }
-                            )
-                            
-                            # 빈 데이터프레임으로 시작 (실제로는 히스토리컬 데이터 제공 필요)
-                            dataframe = pd.DataFrame()
-                            
-                            # 전략에서 신호 생성
-                            signal = await strategy.on_data_async(payload, dataframe)
-                            
-                            if signal:
-                                # Capital Manager로 신호 전송
-                                exchange_name = "letrade.requests"
-                                signal_routing_key = signal.get("routing_key", f"request.capital.allocation.{strategy_config.strategy_id}")
-                                signal_payload = signal.get("payload", signal)
-                                
-                                success = await message_bus.publish(
-                                    exchange_name=exchange_name,
-                                    routing_key=signal_routing_key,
-                                    message=signal_payload
-                                )
-                                
-                                if success:
-                                    logger.info(
-                                        f"Trading signal sent to Capital Manager",
-                                        extra={
-                                            "strategy_id": strategy_config.strategy_id,
-                                            "routing_key": signal_routing_key,
-                                            "side": signal_payload.get("side"),
-                                            "signal_price": signal_payload.get("signal_price")
-                                        }
-                                    )
-                                else:
-                                    logger.error(
-                                        f"Failed to send signal to Capital Manager",
-                                        extra={"strategy_id": strategy_config.strategy_id}
-                                    )
-                            
-                        except Exception as e:
-                            logger.error(
-                                f"Error handling market data: {e}",
-                                extra={
-                                    "strategy_id": strategy_config.strategy_id,
-                                    "error": str(e),
-                                    "traceback": traceback.format_exc()
-                                }
-                            )
-                    
-                    # 시장 데이터 구독
-                    for routing_key in subscriptions:
-                        # market_data 큐 구독 (모든 시장 데이터 수신)
-                        success = await message_bus.subscribe(
-                            queue_name="market_data",
-                            callback=handle_market_data,
-                            auto_ack=False
-                        )
-                        
-                        if success:
-                            logger.info(
-                                f"Subscribed to market data",
-                                extra={
-                                    "strategy_id": strategy_config.strategy_id,
-                                    "routing_key": routing_key
-                                }
-                            )
-                        else:
-                            logger.error(
-                                f"Failed to subscribe to market data",
-                                extra={
-                                    "strategy_id": strategy_config.strategy_id,
-                                    "routing_key": routing_key
-                                }
-                            )
-                    
-                    # 무한 루프로 프로세스 유지
-                    while True:
-                        # 주기적으로 헬스체크 및 메트릭 업데이트
-                        await asyncio.sleep(30.0)
-                        
-                        health_status = await strategy.health_check()
-                        logger.debug(
-                            f"Strategy health check",
-                            extra={
-                                "strategy_id": strategy_config.strategy_id,
-                                "healthy": health_status.get("healthy", False)
-                            }
-                        )
-                        
-                except Exception as e:
-                    logger.error(
-                        f"Strategy execution error: {e}",
-                        extra={
-                            "strategy_id": strategy_config.strategy_id,
-                            "error": str(e),
-                            "traceback": traceback.format_exc()
-                        }
-                    )
-                finally:
-                    # 정리 작업
-                    if strategy:
-                        try:
-                            await strategy.stop()
-                        except Exception as e:
-                            logger.error(f"Error stopping strategy: {e}")
-                    
-                    if message_bus:
-                        try:
-                            await message_bus.disconnect()
-                        except Exception as e:
-                            logger.error(f"Error disconnecting message bus: {e}")
-            
-            # 이벤트 루프에서 전략 실행
-            loop.run_until_complete(run_strategy())
-            
+            self._setup_signal_handlers()
+            self.loop.run_until_complete(self._run_strategy())
         except Exception as e:
             logger.error(
                 f"Strategy process error: {e}",
                 extra={"traceback": traceback.format_exc()}
             )
         finally:
-            loop.close()
+            self.loop.close()
+    
+    def _setup_signal_handlers(self):
+        """시그널 핸들러 설정"""
+        def signal_handler(signum, frame):
+            logger.info(f"Strategy process {os.getpid()} received signal {signum}")
+            self.loop.stop()
+        
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+    
+    async def _run_strategy(self):
+        """비동기 전략 실행"""
+        try:
+            await self._initialize_strategy()
+            await self._start_strategy()
+            await self._subscribe_market_data()
+            await self._monitor_strategy()
+        except Exception as e:
+            logger.error(
+                f"Strategy execution error: {e}",
+                extra={
+                    "strategy_id": self.strategy_config.strategy_id,
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                }
+            )
+        finally:
+            await self._cleanup()
+    
+    async def _initialize_strategy(self):
+        """전략 초기화"""
+        # 전략 인스턴스 생성
+        self.strategy = self.strategy_class(self.strategy_config)
+        
+        # 메시지 버스 설정 및 연결
+        message_bus_config = {
+            "host": os.getenv("RABBITMQ_HOST", "localhost"),
+            "port": int(os.getenv("RABBITMQ_PORT", 5672)),
+            "username": os.getenv("RABBITMQ_USERNAME", "guest"),
+            "password": os.getenv("RABBITMQ_PASSWORD", "guest"),
+            "virtual_host": os.getenv("RABBITMQ_VHOST", "/")
+        }
+        
+        from src.common.message_bus import MessageBus
+        self.message_bus = MessageBus(message_bus_config)
+        
+        if not await self.message_bus.connect():
+            raise Exception("Failed to connect to message bus")
+    
+    async def _start_strategy(self):
+        """전략 시작"""
+        if not await self.strategy.start():
+            raise Exception(f"Failed to start strategy {self.strategy_config.strategy_id}")
+        
+        logger.info(
+            f"Strategy {self.strategy_config.strategy_id} running in process {os.getpid()}",
+            extra={
+                "strategy_id": self.strategy_config.strategy_id,
+                "process_id": os.getpid(),
+                "dry_run": self.strategy_config.dry_run
+            }
+        )
+    
+    async def _subscribe_market_data(self):
+        """시장 데이터 구독"""
+        subscriptions = self.strategy.get_required_subscriptions()
+        
+        for routing_key in subscriptions:
+            success = await self.message_bus.subscribe(
+                queue_name="market_data",
+                callback=self._handle_market_data,
+                auto_ack=False
+            )
+            
+            if success:
+                logger.info(
+                    f"Subscribed to market data",
+                    extra={
+                        "strategy_id": self.strategy_config.strategy_id,
+                        "routing_key": routing_key
+                    }
+                )
+            else:
+                logger.error(
+                    f"Failed to subscribe to market data",
+                    extra={
+                        "strategy_id": self.strategy_config.strategy_id,
+                        "routing_key": routing_key
+                    }
+                )
+    
+    async def _handle_market_data(self, message_data):
+        """시장 데이터 수신 및 전략 처리"""
+        try:
+            payload = message_data.get("payload", {})
+            routing_key = message_data.get("routing_key", "")
+            
+            logger.debug(
+                f"Received market data for {self.strategy_config.strategy_id}",
+                extra={
+                    "routing_key": routing_key,
+                    "payload_keys": list(payload.keys())
+                }
+            )
+            
+            # 빈 데이터프레임으로 시작 (실제로는 히스토리컬 데이터 제공 필요)
+            dataframe = pd.DataFrame()
+            
+            # 전략에서 신호 생성
+            signal = await self.strategy.on_data_async(payload, dataframe)
+            
+            if signal:
+                await self._send_trading_signal(signal)
+            
+        except Exception as e:
+            logger.error(
+                f"Error handling market data: {e}",
+                extra={
+                    "strategy_id": self.strategy_config.strategy_id,
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                }
+            )
+    
+    async def _send_trading_signal(self, signal):
+        """거래 신호 전송"""
+        exchange_name = "letrade.requests"
+        signal_routing_key = signal.get("routing_key", f"request.capital.allocation.{self.strategy_config.strategy_id}")
+        signal_payload = signal.get("payload", signal)
+        
+        success = await self.message_bus.publish(
+            exchange_name=exchange_name,
+            routing_key=signal_routing_key,
+            message=signal_payload
+        )
+        
+        if success:
+            logger.info(
+                f"Trading signal sent to Capital Manager",
+                extra={
+                    "strategy_id": self.strategy_config.strategy_id,
+                    "routing_key": signal_routing_key,
+                    "side": signal_payload.get("side"),
+                    "signal_price": signal_payload.get("signal_price")
+                }
+            )
+        else:
+            logger.error(
+                f"Failed to send signal to Capital Manager",
+                extra={"strategy_id": self.strategy_config.strategy_id}
+            )
+    
+    async def _monitor_strategy(self):
+        """전략 모니터링"""
+        while True:
+            await asyncio.sleep(30.0)
+            
+            health_status = await self.strategy.health_check()
+            logger.debug(
+                f"Strategy health check",
+                extra={
+                    "strategy_id": self.strategy_config.strategy_id,
+                    "healthy": health_status.get("healthy", False)
+                }
+            )
+    
+    async def _cleanup(self):
+        """정리 작업"""
+        if self.strategy:
+            try:
+                await self.strategy.stop()
+            except Exception as e:
+                logger.error(f"Error stopping strategy: {e}")
+        
+        if self.message_bus:
+            try:
+                await self.message_bus.disconnect()
+            except Exception as e:
+                logger.error(f"Error disconnecting message bus: {e}")
 
 
 class StrategyWorkerManager:

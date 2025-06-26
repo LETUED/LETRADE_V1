@@ -15,6 +15,7 @@ from telegram.ext import (
     Application, 
     CommandHandler as TgCommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
     ContextTypes
 )
@@ -24,6 +25,8 @@ from .auth import AuthManager
 from .commands import CommandHandler
 from .notifications import NotificationManager
 from .message_integration import TelegramMessageIntegration
+from .command_registry import CommandRegistry
+from .menu_system import MenuSystem
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,10 @@ class TelegramBot:
         )
         self.message_bus = None
         
+        # Initialize BotFather-style UI/UX components
+        self.command_registry = CommandRegistry()
+        self.menu_system = MenuSystem()
+        
         # Telegram application
         self.application = None
         
@@ -85,7 +92,17 @@ class TelegramBot:
             
             # Initialize message bus connection
             if not self.message_bus:
-                self.message_bus = MessageBus()
+                # MessageBus config from bot config or defaults
+                message_bus_config = self.config.get('message_bus', {
+                    'host': 'localhost',
+                    'port': 5672,
+                    'username': 'guest',
+                    'password': 'guest',
+                    'virtual_host': '/',
+                    'heartbeat': 60,
+                    'connection_timeout': 30
+                })
+                self.message_bus = MessageBus(message_bus_config)
                 await self.message_bus.connect()
             
             # Create application
@@ -93,6 +110,9 @@ class TelegramBot:
             
             # Register command handlers
             await self._register_handlers()
+            
+            # Register BotFather-style commands with Telegram
+            await self.command_registry.register_commands(self.application)
             
             # Start notification system
             await self.notification_manager.start(self.application.bot, self.message_bus)
@@ -151,40 +171,51 @@ class TelegramBot:
             return False
     
     async def _register_handlers(self) -> None:
-        """Register all command and message handlers."""
-        # Basic commands
+        """Register all redesigned command handlers."""
+        # Core system control commands
         self.application.add_handler(
             TgCommandHandler("start", self._handle_start)
         )
+        self.application.add_handler(
+            TgCommandHandler("stop", self._handle_stop)
+        )
+        self.application.add_handler(
+            TgCommandHandler("restart", self._handle_restart)
+        )
+        
+        # Information commands
         self.application.add_handler(
             TgCommandHandler("help", self._handle_help)
         )
         self.application.add_handler(
             TgCommandHandler("status", self._handle_status)
         )
-        
-        # Portfolio and position commands
         self.application.add_handler(
             TgCommandHandler("portfolio", self._handle_portfolio)
         )
         self.application.add_handler(
-            TgCommandHandler("positions", self._handle_positions)
-        )
-        self.application.add_handler(
-            TgCommandHandler("strategies", self._handle_strategies)
+            TgCommandHandler("report", self._handle_report)
         )
         
-        # Control commands
+        # Legacy commands for backward compatibility
         self.application.add_handler(
-            TgCommandHandler("stop_strategy", self._handle_stop_strategy)
+            TgCommandHandler("positions", self._handle_legacy_positions)
         )
         self.application.add_handler(
-            TgCommandHandler("start_strategy", self._handle_start_strategy)
+            TgCommandHandler("strategies", self._handle_legacy_strategies)
         )
         
-        # Profit/performance commands
+        # Settings and menu commands
         self.application.add_handler(
-            TgCommandHandler("profit", self._handle_profit)
+            TgCommandHandler("settings", self._handle_settings)
+        )
+        self.application.add_handler(
+            TgCommandHandler("menu", self._handle_main_menu)
+        )
+        
+        # Callback query handler for inline keyboards
+        self.application.add_handler(
+            CallbackQueryHandler(self.menu_system.handle_callback_query)
         )
         
         # Unknown command handler
@@ -192,7 +223,7 @@ class TelegramBot:
             MessageHandler(filters.COMMAND, self._handle_unknown_command)
         )
         
-        logger.info("Command handlers registered")
+        logger.info("Redesigned command handlers registered")
     
     async def _check_auth(self, update: Update) -> bool:
         """Check if user is authenticated and authorized.
@@ -254,91 +285,161 @@ class TelegramBot:
         self.user_command_history[user_id].append(now)
         return True
     
-    # Command handlers (will be implemented in next tasks)
+    # Redesigned command handlers with intuitive /start /stop /restart structure
     async def _handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /start command."""
+        """Handle /start command - Start system with hourly reporting."""
         if not await self._check_auth(update):
             return
-            
         await self.command_handler.handle_start(update, context, self.message_bus)
     
-    async def _handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /help command."""
+    async def _handle_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /stop command - Stop entire system."""
         if not await self._check_auth(update):
             return
-            
+        await self.command_handler.handle_stop(update, context, self.message_bus)
+    
+    async def _handle_restart(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /restart command - Restart system."""
+        if not await self._check_auth(update):
+            return
+        await self.command_handler.handle_restart(update, context, self.message_bus)
+    
+    async def _handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /help command - Show new intuitive commands."""
+        if not await self._check_auth(update):
+            return
         await self.command_handler.handle_help(update, context)
     
     async def _handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /status command."""
+        """Handle /status command - Real-time system status."""
         if not await self._check_auth(update):
             return
-            
         await self.command_handler.handle_status(update, context, self.message_bus)
     
     async def _handle_portfolio(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /portfolio command."""
+        """Handle /portfolio command - Portfolio overview."""
         if not await self._check_auth(update):
             return
-            
         await self.command_handler.handle_portfolio(update, context, self.message_bus)
     
-    async def _handle_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /positions command."""
+    async def _handle_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /report command - Immediate detailed report."""
         if not await self._check_auth(update):
             return
-            
-        await self.command_handler.handle_positions(update, context, self.message_bus)
+        await self.command_handler.handle_report(update, context, self.message_bus)
     
-    async def _handle_strategies(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /strategies command."""
+    # Legacy command handlers for backward compatibility
+    async def _handle_legacy_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle legacy /positions command."""
         if not await self._check_auth(update):
             return
-            
-        await self.command_handler.handle_strategies(update, context, self.message_bus)
-    
-    async def _handle_stop_strategy(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /stop_strategy command."""
-        if not await self._check_auth(update):
-            return
-            
-        await self.command_handler.handle_stop_strategy(update, context, self.message_bus)
-    
-    async def _handle_start_strategy(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /start_strategy command."""
-        if not await self._check_auth(update):
-            return
-            
-        await self.command_handler.handle_start_strategy(update, context, self.message_bus)
-    
-    async def _handle_profit(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /profit command."""
-        if not await self._check_auth(update):
-            return
-            
-        await self.command_handler.handle_profit(update, context, self.message_bus)
-    
-    async def _handle_unknown_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle unknown commands."""
-        if not await self._check_auth(update):
-            return
-            
         await update.message.reply_text(
-            "❓ Unknown command. Type /help for available commands."
+            "📊 /positions 명령어가 업데이트되었습니다!\n\n"
+            "새로운 명령어를 사용해주세요:\n"
+            "• /portfolio - 포트폴리오 전체 현황\n"
+            "• /status - 실시간 시스템 상태\n"
+            "• /report - 상세 보고서\n\n"
+            "더 간단하고 직관적인 명령어로 바뀌었습니다!"
         )
     
+    async def _handle_legacy_strategies(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle legacy /strategies command."""
+        if not await self._check_auth(update):
+            return
+        await update.message.reply_text(
+            "🎯 /strategies 명령어가 업데이트되었습니다!\n\n"
+            "새로운 명령어를 사용해주세요:\n"
+            "• /status - 전략 상태 포함 시스템 현황\n"
+            "• /report - 전략 성과 상세 분석\n"
+            "• /start - 모든 전략 시작\n"
+            "• /stop - 모든 전략 중지\n\n"
+            "더 간단하고 직관적인 제어가 가능합니다!"
+        )
+    
+    async def _handle_unknown_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle unknown commands with helpful guidance."""
+        if not await self._check_auth(update):
+            return
+        
+        command = update.message.text
+        
+        # Provide helpful suggestions for common typos or old commands
+        suggestions = {
+            "/strat": "/start",
+            "/stop_strategy": "/stop (전체 시스템 중지)",
+            "/start_strategy": "/start (전체 시스템 시작)",
+            "/positions": "/portfolio",
+            "/strategies": "/status",
+            "/profit": "/report"
+        }
+        
+        suggestion_text = ""
+        for old_cmd, new_cmd in suggestions.items():
+            if old_cmd in command.lower():
+                suggestion_text = f"\n\n💡 혹시 '{new_cmd}' 명령어를 찾으시나요?"
+                break
+        
+        await update.message.reply_text(
+            f"❓ **알 수 없는 명령어입니다**\n\n"
+            f"🎛️ **사용 가능한 핵심 명령어:**\n"
+            f"• /start - 시스템 시작\n"
+            f"• /stop - 시스템 중지\n"
+            f"• /status - 현재 상태\n"
+            f"• /portfolio - 포트폴리오\n"
+            f"• /settings - 설정 메뉴\n"
+            f"• /menu - 메인 메뉴\n"
+            f"• /help - 전체 도움말"
+            f"{suggestion_text}\n\n"
+            f"💡 **팁**: '/' 만 입력하면 전체 명령어 목록이 나타납니다!"
+        )
+    
+    # New BotFather-style menu handlers
+    async def _handle_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /settings command - Show BotFather-style settings menu."""
+        if not await self._check_auth(update):
+            return
+        
+        # Initialize service client for menu system if needed
+        if not self.menu_system.service_client:
+            if not self.command_handler.service_client:
+                await self.command_handler.initialize_service_client(self.message_bus)
+            self.menu_system.service_client = self.command_handler.service_client
+        
+        await self.menu_system.show_settings_menu(update, context)
+    
+    async def _handle_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /menu command - Show BotFather-style main menu."""
+        if not await self._check_auth(update):
+            return
+        
+        # Initialize service client for menu system if needed
+        if not self.menu_system.service_client:
+            if not self.command_handler.service_client:
+                await self.command_handler.initialize_service_client(self.message_bus)
+            self.menu_system.service_client = self.command_handler.service_client
+        
+        await self.menu_system.show_main_menu(update, context)
+    
     async def health_check(self) -> Dict[str, Any]:
-        """Perform health check on Telegram Bot.
+        """Perform health check on redesigned Telegram Bot.
         
         Returns:
             dict: Health status information
         """
+        hourly_reporter_status = False
+        if hasattr(self.command_handler, 'hourly_reporter') and self.command_handler.hourly_reporter:
+            hourly_reporter_status = self.command_handler.hourly_reporter.is_running
+        
         return {
             'telegram_bot_running': self.is_running,
             'message_bus_connected': self.message_bus.is_connected if self.message_bus else False,
             'message_integration_connected': self.message_integration.is_connected,
             'authenticated_users': len(self.auth_manager.authenticated_users),
             'bot_token_configured': bool(self.bot_token),
+            'system_running': getattr(self.command_handler, 'system_running', False),
+            'hourly_reporting_enabled': getattr(self.command_handler, 'reporting_enabled', False),
+            'hourly_reporter_active': hourly_reporter_status,
+            'command_structure': 'redesigned_v2',
             'timestamp': datetime.now(timezone.utc).isoformat()
         }
 

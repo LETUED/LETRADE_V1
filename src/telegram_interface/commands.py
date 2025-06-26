@@ -1,9 +1,10 @@
-"""Command handlers for Telegram Bot.
+"""Redesigned Command handlers for Telegram Bot.
 
-Implements all Telegram commands according to MVP specification section 6.3.
-Provides system monitoring, control, and information retrieval capabilities.
+Implements intuitive /start /stop /restart command structure with hourly reporting.
+Provides simple, clear system control and monitoring capabilities.
 """
 
+import asyncio
 import logging
 import uuid
 from typing import Dict, Any, Optional, List
@@ -13,24 +14,42 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from common.message_bus import MessageBus
+from .service_client import ServiceClient
+from .hourly_reporter import HourlyReporter
 
 logger = logging.getLogger(__name__)
 
 
 class CommandHandler:
-    """Handles all Telegram command processing.
+    """Redesigned command handler with intuitive /start /stop /restart structure.
     
-    Implements FR-TI-001 (명령어 처리) from MVP specification.
-    Provides secure command execution with proper error handling.
+    Implements simple, clear command system with automatic hourly reporting.
+    Provides easy-to-use system control for non-technical users.
     """
     
     def __init__(self):
-        """Initialize command handler."""
+        """Initialize redesigned command handler."""
         self.pending_requests: Dict[str, Dict] = {}
-        logger.info("Command handler initialized")
+        self.service_client: Optional[ServiceClient] = None
+        self.hourly_reporter: Optional[HourlyReporter] = None
+        self.system_running = False
+        self.reporting_enabled = False
+        logger.info("Redesigned command handler initialized")
+    
+    async def initialize_service_client(self, message_bus: MessageBus) -> None:
+        """Initialize service client for real system communication.
+        
+        Args:
+            message_bus: MessageBus instance for async communication
+        """
+        self.service_client = ServiceClient(message_bus=message_bus)
+        await self.service_client.__aenter__()
+        logger.info("Service client initialized for redesigned commands")
     
     async def handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
-        """Handle /start command - Bot 시작 및 인증.
+        """Handle /start command - 시스템 시작 및 정기 보고 활성화.
+        
+        새로운 직관적 명령어: 시스템을 시작하고 1시간마다 자동 보고를 받습니다.
         
         Args:
             update: Telegram update object
@@ -39,80 +58,295 @@ class CommandHandler:
         """
         user = update.effective_user
         
-        welcome_message = f"""
-🚀 **Letrade V1 자동 거래 시스템**
+        try:
+            # Initialize service client if not already done
+            if not self.service_client:
+                await self.initialize_service_client(message_bus)
+            
+            # Initialize hourly reporter if not already done
+            if not self.hourly_reporter:
+                self.hourly_reporter = HourlyReporter(self.service_client)
+            
+            # Start the trading system
+            start_result = await self.service_client.start_trading_system(user.id)
+            
+            if start_result.get('success', False):
+                self.system_running = True
+                
+                # Start hourly reporting
+                await self.hourly_reporter.start_reporting(
+                    chat_id=update.effective_chat.id,
+                    bot=update.get_bot()
+                )
+                self.reporting_enabled = True
+                
+                success_message = f"""
+🚀 **시스템 시작 완료!**
 
 안녕하세요, {user.first_name}님!
 
-Letrade V1 시스템에 성공적으로 연결되었습니다.
-이 봇을 통해 거래 시스템을 모니터링하고 제어할 수 있습니다.
+✅ **시작된 서비스:**
+• 거래 시스템: 활성화
+• 전략 모니터링: 시작됨
+• 리스크 관리: 활성화
+• 자동 보고: 1시간마다 전송
 
-**주요 기능:**
-• 📊 시스템 상태 실시간 모니터링
-• 💼 포트폴리오 및 포지션 조회
-• 🔧 전략 시작/중지 제어
-• 📈 수익률 및 성과 분석
-• 🔔 실시간 거래 알림
+📊 **자동 보고 내용:**
+• 포트폴리오 현황
+• 전략 성과 요약
+• 거래 활동 리포트
+• 시스템 상태 체크
 
-**시작하기:**
-/help - 모든 명령어 보기
-/status - 시스템 상태 확인
-/portfolio - 포트폴리오 현황
+🎛️ **간단한 제어 명령어:**
+• `/status` - 실시간 상태 확인
+• `/portfolio` - 포트폴리오 조회
+• `/stop` - 시스템 중지
+• `/restart` - 시스템 재시작
 
-⚠️ **보안 알림**: 이 시스템은 실제 자금을 다룹니다. 
-명령어 사용 시 신중하게 확인해 주세요.
+⏰ **다음 보고**: {self.hourly_reporter.next_report_time()}
 
-행복한 거래 되세요! 💰
+🛡️ **안전한 거래가 시작되었습니다!**
+                """
+                
+                await update.message.reply_text(success_message.strip())
+                logger.info(f"System started by user {user.id} with hourly reporting enabled")
+                
+            else:
+                error_msg = start_result.get('error', '알 수 없는 오류')
+                await update.message.reply_text(
+                    f"❌ **시스템 시작 실패**\n\n"
+                    f"오류: {error_msg}\n\n"
+                    f"잠시 후 다시 시도해 주세요."
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in handle_start: {e}")
+            await update.message.reply_text(
+                "❌ 시스템 시작 중 오류가 발생했습니다. 관리자에게 문의해 주세요."
+            )
+    
+    async def handle_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
+        """Handle /stop command - 시스템 완전 중지.
+        
+        Args:
+            update: Telegram update object
+            context: Telegram context object
+            message_bus: Message bus for system communication
         """
+        user = update.effective_user
         
-        await update.message.reply_text(welcome_message, parse_mode='Markdown')
+        try:
+            # Initialize service client if not already done
+            if not self.service_client:
+                await self.initialize_service_client(message_bus)
+            
+            # Stop hourly reporting first
+            if self.hourly_reporter:
+                await self.hourly_reporter.stop_reporting()
+                self.reporting_enabled = False
+            
+            # Stop the trading system
+            stop_result = await self.service_client.stop_trading_system(user.id)
+            
+            if stop_result.get('success', False):
+                self.system_running = False
+                
+                stop_message = f"""
+🛑 **시스템 중지 완료**
+
+{user.first_name}님, 시스템이 안전하게 중지되었습니다.
+
+✅ **중지된 서비스:**
+• 거래 시스템: 중지됨
+• 모든 전략: 안전하게 중지
+• 자동 보고: 비활성화
+• 신규 거래: 차단됨
+
+💼 **기존 포지션:**
+• 현재 보유 포지션은 유지됩니다
+• 수동으로 정리하거나 재시작 후 관리 가능
+
+🔄 **재시작 방법:**
+• `/start` - 시스템 다시 시작
+• `/restart` - 즉시 재시작
+
+📊 **최종 상태 확인:**
+• `/portfolio` - 포트폴리오 확인
+• `/status` - 시스템 상태 확인
+
+시스템이 안전하게 중지되었습니다. 🛡️
+                """
+                
+                await update.message.reply_text(stop_message.strip())
+                logger.info(f"System stopped by user {user.id}")
+                
+            else:
+                error_msg = stop_result.get('error', '알 수 없는 오류')
+                await update.message.reply_text(
+                    f"❌ **시스템 중지 실패**\n\n"
+                    f"오류: {error_msg}\n\n"
+                    f"긴급한 경우 관리자에게 연락해 주세요."
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in handle_stop: {e}")
+            await update.message.reply_text(
+                "❌ 시스템 중지 중 오류가 발생했습니다. 관리자에게 문의해 주세요."
+            )
+    
+    async def handle_restart(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
+        """Handle /restart command - 시스템 재시작.
         
-        # Log authentication success
-        logger.info(f"User {user.id} (@{user.username}) started bot session")
+        Args:
+            update: Telegram update object
+            context: Telegram context object
+            message_bus: Message bus for system communication
+        """
+        user = update.effective_user
+        
+        try:
+            # Initialize service client if not already done
+            if not self.service_client:
+                await self.initialize_service_client(message_bus)
+            
+            # Send restart notification
+            await update.message.reply_text(
+                "🔄 **시스템 재시작 중...**\n\n"
+                "잠시만 기다려주세요. 시스템을 안전하게 재시작하고 있습니다."
+            )
+            
+            # Stop hourly reporting first
+            if self.hourly_reporter:
+                await self.hourly_reporter.stop_reporting()
+                self.reporting_enabled = False
+            
+            # Restart the trading system
+            restart_result = await self.service_client.restart_trading_system(user.id)
+            
+            if restart_result.get('success', False):
+                self.system_running = True
+                
+                # Restart hourly reporting
+                if not self.hourly_reporter:
+                    self.hourly_reporter = HourlyReporter(self.service_client)
+                
+                await self.hourly_reporter.start_reporting(
+                    chat_id=update.effective_chat.id,
+                    bot=update.get_bot()
+                )
+                self.reporting_enabled = True
+                
+                restart_message = f"""
+✅ **시스템 재시작 완료!**
+
+{user.first_name}님, 시스템이 성공적으로 재시작되었습니다.
+
+🔄 **재시작된 서비스:**
+• 거래 시스템: 재활성화
+• 전략 모니터링: 재시작
+• 리스크 관리: 업데이트됨
+• 자동 보고: 재개됨
+
+📊 **시스템 상태:**
+• 다운타임: {restart_result.get('downtime_seconds', 0)}초
+• 모든 연결: 재설정 완료
+• 데이터 동기화: 완료
+
+⏰ **다음 보고**: {self.hourly_reporter.next_report_time()}
+
+🎯 **이용 가능한 명령어:**
+• `/status` - 시스템 상태
+• `/portfolio` - 포트폴리오
+• `/stop` - 시스템 중지
+
+시스템이 새롭게 시작되었습니다! 🚀
+                """
+                
+                await update.message.reply_text(restart_message.strip())
+                logger.info(f"System restarted by user {user.id}")
+                
+            else:
+                error_msg = restart_result.get('error', '알 수 없는 오류')
+                await update.message.reply_text(
+                    f"❌ **시스템 재시작 실패**\n\n"
+                    f"오류: {error_msg}\n\n"
+                    f"수동으로 중지 후 시작해 보세요:\n"
+                    f"1. `/stop`\n"
+                    f"2. `/start`"
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in handle_restart: {e}")
+            await update.message.reply_text(
+                "❌ 시스템 재시작 중 오류가 발생했습니다. 관리자에게 문의해 주세요."
+            )
     
     async def handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /help command - 도움말 및 명령어 목록.
+        """Handle /help command - 새로운 직관적 명령어 가이드.
+        
+        완전히 재설계된 간단하고 직관적인 명령어 구조를 안내합니다.
         
         Args:
             update: Telegram update object
             context: Telegram context object
         """
+        # 간단하고 직관적인 도움말 (Markdown 문제 방지를 위해 일반 텍스트 사용)
         help_message = """
-📚 **Letrade V1 명령어 가이드**
+🚀 Letrade V1 자동거래 시스템
 
-**🔍 시스템 조회 명령어:**
-/status - 전체 시스템 상태 조회
-/portfolio - 포트폴리오 현황 및 잔고
-/positions - 현재 보유 포지션 목록
-/strategies - 활성 전략 목록 및 상태
+🎛️ 핵심 제어 명령어:
 
-**🎛️ 시스템 제어 명령어:**
-/start_strategy [ID] - 특정 전략 시작
-/stop_strategy [ID] - 특정 전략 중지
+/start - 시스템 시작 + 1시간마다 자동 보고
+/stop - 시스템 완전 중지
+/restart - 시스템 재시작
 
-**📈 성과 분석 명령어:**
-/profit [period] - 수익률 조회
-   - period: today, week, month (기본값: today)
+📊 정보 조회 명령어:
 
-**ℹ️ 기타 명령어:**
-/help - 이 도움말 표시
-/start - 봇 시작 및 환영 메시지
+/status - 실시간 시스템 상태
+/portfolio - 포트폴리오 현황
+/report - 즉시 상세 보고서
 
-**💡 사용 팁:**
-• 명령어는 대소문자를 구분하지 않습니다
-• [ID]는 전략 번호를 의미합니다 (예: /stop_strategy 1)
-• 시스템은 실시간으로 거래 알림을 전송합니다
+💡 사용법:
 
-**🆘 문제가 있나요?**
-시스템 오류나 문의사항이 있으시면 관리자에게 연락해 주세요.
+1️⃣ 시작: /start 입력
+   → 시스템이 시작되고 1시간마다 보고서가 자동 전송됩니다
 
-안전한 거래 되세요! 🛡️
+2️⃣ 확인: /status 또는 /portfolio로 언제든 현황 확인
+
+3️⃣ 중지: /stop으로 시스템 완전 중지
+
+🔄 자동 보고 내용:
+• 포트폴리오 잔고 및 변화
+• 활성 전략 성과
+• 거래 활동 요약
+• 수익률 분석
+
+⚠️ 주의사항:
+• /start 실행 시 실제 거래가 시작됩니다
+• 자동 보고는 /stop까지 계속됩니다
+• 문제 발생 시 즉시 /stop 사용하세요
+
+💰 안전한 자동거래를 시작하세요!
         """
         
-        await update.message.reply_text(help_message, parse_mode='Markdown')
+        try:
+            # 일반 텍스트로 전송 (파싱 오류 방지)
+            await update.message.reply_text(help_message.strip())
+            logger.info("Help command executed successfully")
+        except Exception as e:
+            logger.error(f"Error in handle_help: {e}")
+            # 최소한의 폴백 메시지
+            await update.message.reply_text(
+                "Letrade V1 명령어:\n\n"
+                "/start - 시스템 시작\n"
+                "/stop - 시스템 중지\n"
+                "/status - 상태 확인\n"
+                "/portfolio - 포트폴리오\n\n"
+                "자세한 도움말은 /help를 다시 시도해주세요."
+            )
     
     async def handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
-        """Handle /status command - 시스템 상태 조회.
+        """Handle /status command - 실시간 시스템 상태.
         
         Args:
             update: Telegram update object
@@ -120,40 +354,46 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
             message_bus: Message bus for system communication
         """
         try:
-            # Send status request to Core Engine
-            request_id = str(uuid.uuid4())
+            # Initialize service client if not already done
+            if not self.service_client:
+                await self.initialize_service_client(message_bus)
             
-            status_request = {
-                'request_id': request_id,
-                'type': 'system_status',
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'user_id': update.effective_user.id
-            }
+            # Get real system status
+            status_data = await self.service_client.get_system_status()
             
-            # Store pending request
-            self.pending_requests[request_id] = {
-                'chat_id': update.effective_chat.id,
-                'message_id': update.message.message_id,
-                'type': 'status',
-                'timestamp': datetime.now(timezone.utc)
-            }
+            # Format status message with real data
+            status_icon = "🟢" if status_data.get('healthy', False) else "🔴"
+            status_text = "정상 운영" if status_data.get('healthy', False) else "문제 발생"
             
-            # Send request via message bus
-            await message_bus.publish(
-                routing_key='request.system.status',
-                message=status_request
-            )
+            # System running status
+            system_status = "🟢 실행 중" if self.system_running else "🔴 중지됨"
+            reporting_status = "🟢 활성화" if self.reporting_enabled else "🔴 비활성화"
             
-            # Send immediate response
-            status_message = """
-🔍 **시스템 상태 조회 중...**
+            message = f"""
+{status_icon} **시스템 상태: {status_text}**
 
-잠시만 기다려주세요. 시스템 상태를 확인하고 있습니다.
+🎛️ **제어 상태:**
+• 거래 시스템: {system_status}
+• 자동 보고: {reporting_status}
+• 활성 전략: {status_data.get('active_strategies', 0)}개
 
-⏳ 예상 소요 시간: 2-3초
+📊 **성능 지표:**
+• 응답 시간: {status_data.get('avg_response_time', 0):.1f}ms
+• 처리량: {status_data.get('throughput', 0):,}회/분
+• 성공률: {status_data.get('success_rate', 0):.1f}%
+
+💼 **포트폴리오 요약:**
+• 총 자산: ${status_data.get('total_portfolio_value', 0):,.2f}
+• 가용 자금: ${status_data.get('available_capital', 0):,.2f}
+• 활성 거래: {status_data.get('active_trades', 0)}개
+
+🔄 **다음 작업:**
+{f'• 다음 보고: {self.hourly_reporter.next_report_time()}' if self.reporting_enabled else '• 시스템 시작: /start'}
+
+🕐 업데이트: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}
             """
             
-            await update.message.reply_text(status_message, parse_mode='Markdown')
+            await update.message.reply_text(message.strip())
             
         except Exception as e:
             logger.error(f"Error handling status command: {e}")
@@ -170,36 +410,67 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
             message_bus: Message bus for system communication
         """
         try:
-            # Send portfolio request
-            request_id = str(uuid.uuid4())
+            # Initialize service client if not already done
+            if not self.service_client:
+                await self.initialize_service_client(message_bus)
             
-            portfolio_request = {
-                'request_id': request_id,
-                'type': 'portfolio_status',
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'user_id': update.effective_user.id
-            }
+            # Get real portfolio data
+            portfolio_data = await self.service_client.get_portfolio_status()
             
-            # Store pending request
-            self.pending_requests[request_id] = {
-                'chat_id': update.effective_chat.id,
-                'message_id': update.message.message_id,
-                'type': 'portfolio',
-                'timestamp': datetime.now(timezone.utc)
-            }
+            # Format portfolio message with real data
+            total_value = portfolio_data.get('total_value', 0)
+            available = portfolio_data.get('available_balance', 0)
+            positions_value = portfolio_data.get('positions_value', 0)
+            unrealized_pnl = portfolio_data.get('unrealized_pnl', 0)
+            daily_pnl = portfolio_data.get('daily_pnl', 0)
+            daily_pnl_percent = portfolio_data.get('daily_pnl_percent', 0)
             
-            # Send request via message bus
-            await message_bus.publish(
-                routing_key='request.portfolio.status',
-                message=portfolio_request
-            )
+            # Asset breakdown
+            assets = portfolio_data.get('assets', [])
+            asset_lines = []
+            for asset in assets:
+                symbol = asset.get('symbol', 'Unknown')
+                amount = asset.get('amount', 0)
+                value = asset.get('value', 0)
+                percentage = asset.get('percentage', 0)
+                
+                if symbol == 'USDT':
+                    asset_lines.append(f"USDT: ${value:.2f} ({percentage:.1f}%) 🔵")
+                elif symbol == 'BTC':
+                    asset_lines.append(f"BTC: {amount:.8f} BTC ≈ ${value:.2f} ({percentage:.1f}%) 🟡")
+                else:
+                    asset_lines.append(f"{symbol}: ${value:.2f} ({percentage:.1f}%)")
             
-            # Send immediate response
-            await update.message.reply_text(
-                "💼 **포트폴리오 정보 조회 중...**\n\n"
-                "잠시만 기다려주세요. 포트폴리오 현황을 불러오고 있습니다.",
-                parse_mode='Markdown'
-            )
+            # Risk assessment
+            daily_loss = abs(daily_pnl) if daily_pnl < 0 else 0
+            risk_level = "🟢 낮음" if daily_loss < 2 else "🟡 중간" if daily_loss < 4 else "🔴 높음"
+            
+            message = f"""💼 **포트폴리오 현황**
+
+📊 **계정 요약 (Binance Spot)**
+• 총 자산: ${total_value:.2f}
+• 가용 잔고: ${available:.2f} ({(available/total_value*100 if total_value > 0 else 0):.1f}%)
+• 활성 포지션: ${positions_value:.2f} ({(positions_value/total_value*100 if total_value > 0 else 0):.1f}%)
+
+💰 **자산 구성:**
+{chr(10).join(asset_lines) if asset_lines else '데이터 없음'}
+
+📈 **오늘 거래 성과:**
+• 실현 손익: ${portfolio_data.get('realized_pnl', 0):.2f}
+• 미실현 손익: ${unrealized_pnl:.2f}
+• 순 손익: ${daily_pnl:+.2f} ({daily_pnl_percent:+.2f}%)
+
+⚠️ **리스크 관리:**
+• 일일 손실 한도: $5.00
+• 현재 손실: ${daily_loss:.2f} ({(daily_loss/5*100):.1f}% 사용)
+• 위험도 레벨: {risk_level}
+
+🔄 **권장 조치:**
+{('정상 운영 중' if daily_loss < 3 else '주의 깊은 모니터링 필요')}
+
+🕐 **업데이트**: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"""
+            
+            await update.message.reply_text(message)
             
         except Exception as e:
             logger.error(f"Error handling portfolio command: {e}")
@@ -207,8 +478,8 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
                 "❌ 포트폴리오 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
             )
     
-    async def handle_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
-        """Handle /positions command - 현재 포지션 목록.
+    async def handle_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
+        """Handle /report command - 즉시 상세 보고서.
         
         Args:
             update: Telegram update object
@@ -216,440 +487,27 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
             message_bus: Message bus for system communication
         """
         try:
-            # Send positions request
-            request_id = str(uuid.uuid4())
+            # Initialize service client if not already done
+            if not self.service_client:
+                await self.initialize_service_client(message_bus)
             
-            positions_request = {
-                'request_id': request_id,
-                'type': 'positions_status',
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'user_id': update.effective_user.id
-            }
-            
-            # Store pending request
-            self.pending_requests[request_id] = {
-                'chat_id': update.effective_chat.id,
-                'message_id': update.message.message_id,
-                'type': 'positions',
-                'timestamp': datetime.now(timezone.utc)
-            }
-            
-            # Send request via message bus
-            await message_bus.publish(
-                routing_key='request.positions.status',
-                message=positions_request
-            )
+            # Initialize hourly reporter if not already done for immediate report
+            if not self.hourly_reporter:
+                self.hourly_reporter = HourlyReporter(self.service_client)
             
             await update.message.reply_text(
-                "📊 **포지션 정보 조회 중...**\n\n"
-                "현재 보유 중인 모든 포지션을 확인하고 있습니다.",
-                parse_mode='Markdown'
+                "📊 **상세 보고서 생성 중...**\n\n"
+                "포트폴리오, 전략, 거래 활동을 종합 분석하고 있습니다."
+            )
+            
+            # Send immediate comprehensive report
+            await self.hourly_reporter.send_immediate_report(
+                chat_id=update.effective_chat.id,
+                bot=update.get_bot()
             )
             
         except Exception as e:
-            logger.error(f"Error handling positions command: {e}")
+            logger.error(f"Error handling report command: {e}")
             await update.message.reply_text(
-                "❌ 포지션 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                "❌ 보고서 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
             )
-    
-    async def handle_strategies(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
-        """Handle /strategies command - 전략 목록 및 상태.
-        
-        Args:
-            update: Telegram update object
-            context: Telegram context object
-            message_bus: Message bus for system communication
-        """
-        try:
-            # Send strategies request
-            request_id = str(uuid.uuid4())
-            
-            strategies_request = {
-                'request_id': request_id,
-                'type': 'strategies_status',
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'user_id': update.effective_user.id
-            }
-            
-            # Store pending request
-            self.pending_requests[request_id] = {
-                'chat_id': update.effective_chat.id,
-                'message_id': update.message.message_id,
-                'type': 'strategies',
-                'timestamp': datetime.now(timezone.utc)
-            }
-            
-            # Send request via message bus
-            await message_bus.publish(
-                routing_key='request.strategies.status',
-                message=strategies_request
-            )
-            
-            await update.message.reply_text(
-                "🎯 **전략 상태 조회 중...**\n\n"
-                "모든 거래 전략의 현재 상태를 확인하고 있습니다.",
-                parse_mode='Markdown'
-            )
-            
-        except Exception as e:
-            logger.error(f"Error handling strategies command: {e}")
-            await update.message.reply_text(
-                "❌ 전략 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
-            )
-    
-    async def handle_stop_strategy(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
-        """Handle /stop_strategy command - 특정 전략 중지.
-        
-        Args:
-            update: Telegram update object
-            context: Telegram context object
-            message_bus: Message bus for system communication
-        """
-        try:
-            # Parse strategy ID from command
-            command_args = context.args
-            if not command_args:
-                await update.message.reply_text(
-                    "❌ **사용법 오류**\n\n"
-                    "전략 ID를 지정해야 합니다.\n\n"
-                    "**사용법:** `/stop_strategy [전략ID]`\n"
-                    "**예시:** `/stop_strategy 1`\n\n"
-                    "전략 목록은 /strategies 명령어로 확인하세요.",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            try:
-                strategy_id = int(command_args[0])
-            except ValueError:
-                await update.message.reply_text(
-                    "❌ **잘못된 전략 ID**\n\n"
-                    "전략 ID는 숫자여야 합니다.\n\n"
-                    "**예시:** `/stop_strategy 1`",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            # Send stop strategy command
-            request_id = str(uuid.uuid4())
-            
-            stop_command = {
-                'request_id': request_id,
-                'type': 'stop_strategy',
-                'strategy_id': strategy_id,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'user_id': update.effective_user.id,
-                'username': update.effective_user.username
-            }
-            
-            # Store pending request
-            self.pending_requests[request_id] = {
-                'chat_id': update.effective_chat.id,
-                'message_id': update.message.message_id,
-                'type': 'stop_strategy',
-                'strategy_id': strategy_id,
-                'timestamp': datetime.now(timezone.utc)
-            }
-            
-            # Send command via message bus
-            await message_bus.publish(
-                routing_key='commands.strategy.stop',
-                message=stop_command
-            )
-            
-            await update.message.reply_text(
-                f"🛑 **전략 {strategy_id} 중지 요청**\n\n"
-                f"전략 #{strategy_id}를 안전하게 중지하고 있습니다.\n"
-                f"현재 진행 중인 거래가 완료되면 전략이 중지됩니다.\n\n"
-                f"⏳ 처리 중...",
-                parse_mode='Markdown'
-            )
-            
-        except Exception as e:
-            logger.error(f"Error handling stop_strategy command: {e}")
-            await update.message.reply_text(
-                "❌ 전략 중지 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
-            )
-    
-    async def handle_start_strategy(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
-        """Handle /start_strategy command - 특정 전략 시작.
-        
-        Args:
-            update: Telegram update object
-            context: Telegram context object
-            message_bus: Message bus for system communication
-        """
-        try:
-            # Parse strategy ID from command
-            command_args = context.args
-            if not command_args:
-                await update.message.reply_text(
-                    "❌ **사용법 오류**\n\n"
-                    "전략 ID를 지정해야 합니다.\n\n"
-                    "**사용법:** `/start_strategy [전략ID]`\n"
-                    "**예시:** `/start_strategy 1`\n\n"
-                    "전략 목록은 /strategies 명령어로 확인하세요.",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            try:
-                strategy_id = int(command_args[0])
-            except ValueError:
-                await update.message.reply_text(
-                    "❌ **잘못된 전략 ID**\n\n"
-                    "전략 ID는 숫자여야 합니다.\n\n"
-                    "**예시:** `/start_strategy 1`",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            # Send start strategy command
-            request_id = str(uuid.uuid4())
-            
-            start_command = {
-                'request_id': request_id,
-                'type': 'start_strategy',
-                'strategy_id': strategy_id,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'user_id': update.effective_user.id,
-                'username': update.effective_user.username
-            }
-            
-            # Store pending request
-            self.pending_requests[request_id] = {
-                'chat_id': update.effective_chat.id,
-                'message_id': update.message.message_id,
-                'type': 'start_strategy',
-                'strategy_id': strategy_id,
-                'timestamp': datetime.now(timezone.utc)
-            }
-            
-            # Send command via message bus
-            await message_bus.publish(
-                routing_key='commands.strategy.start',
-                message=start_command
-            )
-            
-            await update.message.reply_text(
-                f"🚀 **전략 {strategy_id} 시작 요청**\n\n"
-                f"전략 #{strategy_id}를 시작하고 있습니다.\n"
-                f"시스템 검증과 초기화가 완료되면 거래를 시작합니다.\n\n"
-                f"⏳ 처리 중...",
-                parse_mode='Markdown'
-            )
-            
-        except Exception as e:
-            logger.error(f"Error handling start_strategy command: {e}")
-            await update.message.reply_text(
-                "❌ 전략 시작 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
-            )
-    
-    async def handle_profit(self, update: Update, context: ContextTypes.DEFAULT_TYPE, message_bus: MessageBus) -> None:
-        """Handle /profit command - 수익률 조회.
-        
-        Args:
-            update: Telegram update object
-            context: Telegram context object
-            message_bus: Message bus for system communication
-        """
-        try:
-            # Parse period from command (default: today)
-            period = 'today'
-            if context.args:
-                provided_period = context.args[0].lower()
-                if provided_period in ['today', 'week', 'month']:
-                    period = provided_period
-                else:
-                    await update.message.reply_text(
-                        "❌ **잘못된 기간 설정**\n\n"
-                        "지원되는 기간: today, week, month\n\n"
-                        "**사용법:** `/profit [기간]`\n"
-                        "**예시:** `/profit week`",
-                        parse_mode='Markdown'
-                    )
-                    return
-            
-            # Send profit request
-            request_id = str(uuid.uuid4())
-            
-            profit_request = {
-                'request_id': request_id,
-                'type': 'profit_analysis',
-                'period': period,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'user_id': update.effective_user.id
-            }
-            
-            # Store pending request
-            self.pending_requests[request_id] = {
-                'chat_id': update.effective_chat.id,
-                'message_id': update.message.message_id,
-                'type': 'profit',
-                'period': period,
-                'timestamp': datetime.now(timezone.utc)
-            }
-            
-            # Send request via message bus
-            await message_bus.publish(
-                routing_key='request.profit.analysis',
-                message=profit_request
-            )
-            
-            period_korean = {
-                'today': '오늘',
-                'week': '이번 주',
-                'month': '이번 달'
-            }
-            
-            await update.message.reply_text(
-                f"📈 **{period_korean[period]} 수익률 분석 중...**\n\n"
-                f"거래 내역과 성과를 분석하고 있습니다.\n"
-                f"잠시만 기다려주세요.",
-                parse_mode='Markdown'
-            )
-            
-        except Exception as e:
-            logger.error(f"Error handling profit command: {e}")
-            await update.message.reply_text(
-                "❌ 수익률 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
-            )
-    
-    async def process_response(self, response_data: Dict[str, Any], bot: Optional[Any] = None) -> None:
-        """Process response from Core Engine and send to user.
-        
-        Args:
-            response_data: Response data from Core Engine
-            bot: Telegram bot instance (optional)
-        """
-        try:
-            request_id = response_data.get('request_id')
-            if not request_id or request_id not in self.pending_requests:
-                logger.warning(f"Received response for unknown request: {request_id}")
-                return
-            
-            pending_request = self.pending_requests[request_id]
-            chat_id = pending_request['chat_id']
-            request_type = pending_request['type']
-            
-            # Format response based on type
-            message = await self._format_response(request_type, response_data, pending_request)
-            
-            # Send response to user
-            if bot:
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=message,
-                    parse_mode='Markdown'
-                )
-            else:
-                logger.warning(f"Cannot send response - bot instance not provided for request {request_id}")
-            
-            # Clean up pending request
-            del self.pending_requests[request_id]
-            
-        except Exception as e:
-            logger.error(f"Error processing response: {e}")
-    
-    async def _format_response(self, request_type: str, response_data: Dict[str, Any], pending_request: Dict[str, Any]) -> str:
-        """Format response message based on request type.
-        
-        Args:
-            request_type: Type of the original request
-            response_data: Response data from Core Engine
-            pending_request: Original request information
-            
-        Returns:
-            str: Formatted message for user
-        """
-        if request_type == 'status':
-            return self._format_status_response(response_data)
-        elif request_type == 'portfolio':
-            return self._format_portfolio_response(response_data)
-        elif request_type == 'positions':
-            return self._format_positions_response(response_data)
-        elif request_type == 'strategies':
-            return self._format_strategies_response(response_data)
-        elif request_type in ['start_strategy', 'stop_strategy']:
-            return self._format_strategy_control_response(response_data, pending_request)
-        elif request_type == 'profit':
-            return self._format_profit_response(response_data, pending_request)
-        else:
-            return "✅ 요청이 성공적으로 처리되었습니다."
-    
-    def _format_status_response(self, response_data: Dict[str, Any]) -> str:
-        """Format system status response."""
-        status = response_data.get('status', {})
-        
-        # System status indicators
-        system_healthy = status.get('healthy', False)
-        status_icon = "🟢" if system_healthy else "🔴"
-        status_text = "정상" if system_healthy else "오류"
-        
-        message = f"""
-{status_icon} **시스템 상태: {status_text}**
-
-**📊 핵심 지표:**
-• 시스템 가동률: {status.get('uptime', 'N/A')}
-• 활성 전략 수: {status.get('active_strategies', 0)}개
-• 연결된 거래소: {status.get('connected_exchanges', 0)}개
-• 메시지 버스: {'🟢 연결됨' if status.get('message_bus_connected') else '🔴 연결 끊김'}
-
-**💼 포트폴리오:**
-• 총 자산: ${status.get('total_portfolio_value', 0):,.2f}
-• 가용 자금: ${status.get('available_capital', 0):,.2f}
-• 진행 중인 거래: {status.get('active_trades', 0)}개
-
-**⚡ 성능:**
-• 평균 응답 시간: {status.get('avg_response_time', 0)}ms
-• 초당 처리량: {status.get('throughput', 0)}
-
-🕐 마지막 업데이트: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}
-        """
-        
-        return message.strip()
-    
-    def _format_portfolio_response(self, response_data: Dict[str, Any]) -> str:
-        """Format portfolio status response."""
-        # This will be implemented when we receive actual portfolio data structure
-        return "💼 **포트폴리오 정보**\n\n포트폴리오 데이터 형식화 구현 예정"
-    
-    def _format_positions_response(self, response_data: Dict[str, Any]) -> str:
-        """Format positions status response."""
-        # This will be implemented when we receive actual positions data structure
-        return "📊 **포지션 정보**\n\n포지션 데이터 형식화 구현 예정"
-    
-    def _format_strategies_response(self, response_data: Dict[str, Any]) -> str:
-        """Format strategies status response."""
-        # This will be implemented when we receive actual strategies data structure
-        return "🎯 **전략 정보**\n\n전략 데이터 형식화 구현 예정"
-    
-    def _format_strategy_control_response(self, response_data: Dict[str, Any], pending_request: Dict[str, Any]) -> str:
-        """Format strategy control response."""
-        strategy_id = pending_request.get('strategy_id')
-        action = pending_request.get('type')
-        success = response_data.get('success', False)
-        
-        if action == 'start_strategy':
-            if success:
-                return f"✅ **전략 {strategy_id} 시작 완료**\n\n전략이 성공적으로 시작되었습니다."
-            else:
-                error = response_data.get('error', '알 수 없는 오류')
-                return f"❌ **전략 {strategy_id} 시작 실패**\n\n오류: {error}"
-        else:  # stop_strategy
-            if success:
-                return f"✅ **전략 {strategy_id} 중지 완료**\n\n전략이 안전하게 중지되었습니다."
-            else:
-                error = response_data.get('error', '알 수 없는 오류')
-                return f"❌ **전략 {strategy_id} 중지 실패**\n\n오류: {error}"
-    
-    def _format_profit_response(self, response_data: Dict[str, Any], pending_request: Dict[str, Any]) -> str:
-        """Format profit analysis response."""
-        period = pending_request.get('period', 'today')
-        period_korean = {
-            'today': '오늘',
-            'week': '이번 주', 
-            'month': '이번 달'
-        }
-        
-        return f"📈 **{period_korean[period]} 수익률 분석**\n\n수익률 데이터 형식화 구현 예정"

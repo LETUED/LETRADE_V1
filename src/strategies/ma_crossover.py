@@ -110,12 +110,22 @@ class MAcrossoverStrategy(BaseStrategy):
             
             # 이동평균 간 차이 (크로스오버 강도 측정)
             df['ma_difference'] = df['ma_fast'] - df['ma_slow']
-            df['ma_difference_pct'] = (df['ma_difference'] / df['ma_slow']) * 100
+            
+            # 안전한 방식으로 ma_difference_pct 계산
+            df['ma_difference_pct'] = 0.0
+            mask = df['ma_slow'].notna() & (df['ma_slow'] != 0)
+            if mask.any():
+                df.loc[mask, 'ma_difference_pct'] = (df.loc[mask, 'ma_difference'] / df.loc[mask, 'ma_slow']) * 100
             
             # 크로스오버 방향 감지
             df['ma_signal'] = 0
-            df.loc[df['ma_fast'] > df['ma_slow'], 'ma_signal'] = 1  # 골든 크로스 영역
-            df.loc[df['ma_fast'] < df['ma_slow'], 'ma_signal'] = -1  # 데스 크로스 영역
+            # NaN 값을 0으로 채우고 비교
+            ma_fast_filled = df['ma_fast'].fillna(0)
+            ma_slow_filled = df['ma_slow'].fillna(0)
+            valid_idx = df['ma_fast'].notna() & df['ma_slow'].notna()
+            
+            df.loc[valid_idx & (ma_fast_filled > ma_slow_filled), 'ma_signal'] = 1  # 골든 크로스 영역
+            df.loc[valid_idx & (ma_fast_filled < ma_slow_filled), 'ma_signal'] = -1  # 데스 크로스 영역
             
             # 크로스오버 이벤트 감지 (신호 변화 시점)
             df['ma_crossover'] = df['ma_signal'].diff()

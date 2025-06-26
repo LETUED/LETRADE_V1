@@ -24,7 +24,7 @@ from .database_handler import CapitalManagerDatabaseHandler
 logger = logging.getLogger(__name__)
 
 
-class CapitalManager:
+class RefactoredCapitalManager:
     """리팩토링된 Capital Manager"""
     
     def __init__(self, config: Dict[str, Any]):
@@ -58,7 +58,7 @@ class CapitalManager:
         }
         
         logger.info(
-            "CapitalManager initialized",
+            "RefactoredCapitalManager initialized",
             extra={
                 "portfolio_id": config.get('portfolio_id', 1),
                 "risk_params": self.risk_params.to_dict()
@@ -72,7 +72,7 @@ class CapitalManager:
     async def start(self) -> bool:
         """Capital Manager 시작"""
         try:
-            logger.info("Starting CapitalManager")
+            logger.info("Starting RefactoredCapitalManager")
             
             # 1. 데이터베이스 연결 및 상태 로드
             await self._initialize_from_database()
@@ -85,7 +85,7 @@ class CapitalManager:
                 await self._setup_message_subscriptions()
             
             self.is_running = True
-            logger.info("CapitalManager started successfully")
+            logger.info("RefactoredCapitalManager started successfully")
             
             return True
             
@@ -96,7 +96,7 @@ class CapitalManager:
     async def stop(self) -> bool:
         """Capital Manager 중지"""
         try:
-            logger.info("Stopping CapitalManager")
+            logger.info("Stopping RefactoredCapitalManager")
             
             # 메시지 구독 해제
             if self.message_bus:
@@ -106,7 +106,7 @@ class CapitalManager:
             await self._persist_final_state()
             
             self.is_running = False
-            logger.info("CapitalManager stopped successfully")
+            logger.info("RefactoredCapitalManager stopped successfully")
             
             return True
             
