@@ -1,0 +1,197 @@
+# 🚀 24/7 프로덕션 환경 Docker Compose
+# 자동 재시작, 모니터링, 로그 관리 포함
+
+version: '3.8'
+
+services:
+  # 메인 거래 시스템
+  letrade-main:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: letrade-main
+    restart: unless-stopped  # 자동 재시작
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - HEALTH_CHECK_INTERVAL=30
+    env_file:
+      - .env.production
+    volumes:
+      # 로그 영속성
+      - ./logs:/app/logs
+      # 백업 데이터
+      - ./backups:/app/backups
+      # 설정 파일
+      - ./config/production.yaml:/app/config/production.yaml:ro
+    ports:
+      - "8000:8000"  # REST API
+    networks:
+      - letrade-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # PostgreSQL 데이터베이스
+  postgres:
+    image: postgres:15-alpine
+    container_name: letrade-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-letrade}
+      POSTGRES_USER: ${DATABASE_USER:-letrade}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      # 데이터 영속성
+      - postgres_data:/var/lib/postgresql/data
+      # 백업 스크립트
+      - ./scripts/db_backup.sh:/docker-entrypoint-initdb.d/backup.sh
+    ports:
+      - "5432:5432"
+    networks:
+      - letrade-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-letrade}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 캐시
+  redis:
+    image: redis:7-alpine
+    container_name: letrade-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - letrade-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # RabbitMQ 메시지 버스
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: letrade-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-letrade}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    networks:
+      - letrade-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 모니터링: Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: letrade-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - letrade-network
+
+  # 모니터링: Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: letrade-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - letrade-network
+
+  # 로그 수집: Filebeat (선택적)
+  filebeat:
+    image: elastic/filebeat:8.8.0
+    container_name: letrade-filebeat
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./config/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./logs:/app/logs:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - letrade-network
+    depends_on:
+      - letrade-main
+
+  # 백업 서비스
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    container_name: letrade-backup
+    restart: unless-stopped
+    environment:
+      - BACKUP_SCHEDULE=0 2 * * *  # 매일 새벽 2시
+      - BACKUP_RETENTION_DAYS=7
+    volumes:
+      - ./backups:/app/backups
+      - postgres_data:/var/lib/postgresql/data:ro
+    networks:
+      - letrade-network
+    depends_on:
+      - postgres
+
+# 네트워크 설정
+networks:
+  letrade-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# 볼륨 설정 (데이터 영속성)
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

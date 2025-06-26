@@ -754,7 +754,7 @@ class CCXTExchangeConnector(IExchangeConnector):
             if (
                 self.config.api_key
                 and self.config.api_secret
-                and self.config.api_key != "test_api_key"
+                and self.config.api_key != os.getenv("TEST_API_KEY", "")
             ):
                 await self.exchange.fetch_balance()
 
@@ -1132,7 +1132,7 @@ def create_exchange_connector(
         # Create ExchangeConfig for CCXT connector
         exchange_config = ExchangeConfig(
             exchange_name=exchange_name,
-            api_key=config.get("api_key", ""),
+            api_key=config.get("api_key") or os.getenv("EXCHANGE_API_KEY", ""),
             api_secret=config.get("api_secret", ""),
             api_passphrase=config.get("api_passphrase"),
             sandbox=config.get("sandbox", True),

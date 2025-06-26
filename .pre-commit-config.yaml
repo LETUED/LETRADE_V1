@@ -1,0 +1,71 @@
+# 🔄 Pre-commit 훅 설정
+# 커밋 전 자동 코드 품질 검사
+
+repos:
+  # 1. 코드 포맷팅 (자동 수정)
+  - repo: https://github.com/psf/black
+    rev: 23.7.0
+    hooks:
+      - id: black
+        language_version: python3.11
+        args: [--line-length=88]
+        files: ^(src/|tests/).*\.py$
+
+  # 2. Import 정렬 (자동 수정)  
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args: [--profile=black]
+        files: ^(src/|tests/).*\.py$
+
+  # 3. 기본 파일 검사
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      # 파일 끝 개행 확인
+      - id: end-of-file-fixer
+        files: ^(src/|tests/).*\.py$
+      # 줄 끝 공백 제거
+      - id: trailing-whitespace
+        files: ^(src/|tests/).*\.py$
+      # JSON 문법 검사
+      - id: check-json
+      # YAML 문법 검사  
+      - id: check-yaml
+        args: [--unsafe]
+      # 큰 파일 체크 (10MB 이상)
+      - id: check-added-large-files
+        args: [--maxkb=10240]
+      # 병합 충돌 마커 체크
+      - id: check-merge-conflict
+
+  # 4. Python 문법 검사 (빠른 검사)
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        args: [--max-line-length=88, --extend-ignore=E203,W503]
+        files: ^(src/|tests/).*\.py$
+
+  # 5. 보안 검사 (중요 파일만)
+  - repo: https://github.com/pycqa/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: [-r, src/, -f, json, -o, bandit-report.json]
+        files: ^src/.*\.py$
+        # 테스트 파일은 제외
+
+# 커밋 메시지 검증 (선택적)
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit.com hooks
+    
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

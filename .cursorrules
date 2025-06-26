@@ -1,0 +1,338 @@
+# Letrade_v1 암호화폐 자동거래 시스템 - Cursor Rules
+
+이 파일은 Letrade_v1 프로젝트에서 Cursor IDE가 따라야 할 코딩 규칙과 가이드라인을 정의합니다.
+
+## 🏗️ 프로젝트 개요
+
+Letrade_v1은 생산급 자동 암호화폐 거래 시스템입니다:
+- **아키텍처**: RabbitMQ 메시지 버스 기반 마이크로서비스
+- **클라우드**: Google Cloud Platform (GCP)
+- **언어**: Python 3.11+
+- **데이터베이스**: PostgreSQL (Cloud SQL)
+- **컨테이너**: Docker + systemd
+
+### 핵심 설계 원칙
+- **복원력**: 프로세스 기반 격리로 장애 전파 방지
+- **확장성**: 마이크로서비스로 개별 구성요소 독립 확장
+- **확장 용이성**: BaseStrategy 인터페이스로 플러그인 방식 전략 추가
+- **보안**: GCP Secret Manager 기반 중앙집중식 비밀 관리
+
+## 📋 코딩 스타일 & 컨벤션
+
+### Python 스타일
+- **포맷터**: Black (라인 길이: 88자)
+- **타입 힌트**: 모든 함수에 필수
+- **Docstring**: Google 스타일 필수
+- **임포트 순서**: isort 사용
+- **린팅**: flake8 + mypy
+
+### 네이밍 컨벤션
+- **클래스**: PascalCase (예: `CoreEngine`, `CapitalManager`)
+- **함수/변수**: snake_case
+- **상수**: UPPER_SNAKE_CASE
+- **서비스명**: PascalCase (예: `CoreEngine`, `StrategyWorker`)
+- **메시지 토픽**: 점 표기법 (예: `market_data.binance.btcusdt`)
+- **DB 테이블**: snake_case 복수형 (예: `strategies`, `trades`)
+- **환경 변수**: UPPERCASE_UNDERSCORE (예: `GCP_PROJECT_ID`)
+
+### 파일 구조
+```
+src/
+├── core_engine/       # 메인 오케스트레이터
+├── strategies/        # 거래 전략 (BaseStrategy 인터페이스)
+├── capital_manager/   # 리스크 및 자본 할당
+├── exchange_connector/ # 거래소 API 추상화
+└── common/           # 공유 유틸리티
+```
+
+## 🎯 아키텍처 패턴 및 설계 원칙
+
+### 1. Port & Adapter Pattern (핵심 원칙)
+새로운 기능 구현 시 반드시 Port 인터페이스부터 정의:
+
+```python
+# 1단계: Port 인터페이스 정의 (docs/design/INTERFACE_SPECIFICATION.md 참조)
+class ExchangePort(ABC):
+    @abstractmethod
+    async def place_order(self, trade: Trade) -> str:
+        pass
+
+# 2단계: Adapter 구현 (기존 코드 래핑 가능)
+class BinanceAdapter(ExchangePort):
+    async def place_order(self, trade: Trade) -> str:
+        # 실제 구현
+        pass
+
+# 3단계: Factory로 생성
+exchange = ExchangeFactory.create("binance", config)
+```
+
+### 2. BaseStrategy 인터페이스 구현 (기존 패턴 유지)
+모든 거래 전략은 반드시 BaseStrategy를 상속해야 합니다:
+
+```python
+class MyStrategy(BaseStrategy):
+    def populate_indicators(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        # 기술 지표 계산
+        pass
+    
+    def on_data(self, data: dict, dataframe: pd.DataFrame) -> Optional[Dict]:
+        # 거래 신호 생성 로직
+        pass
+    
+    def get_required_subscriptions(self) -> List[str]:
+        # 구독할 메시지 토픽 반환
+        return ["market_data.binance.btcusdt"]
+```
+
+### 3. CQRS Pattern (새로운 기능용)
+새로운 애플리케이션 로직은 Command/Query 분리:
+
+```python
+# Command (상태 변경)
+@dataclass
+class PlaceTradeCommand:
+    portfolio_id: str
+    symbol: Symbol
+    side: str
+    amount: Decimal
+
+# Command Handler
+class PlaceTradeHandler:
+    async def handle(self, command: PlaceTradeCommand) -> Dict[str, Any]:
+        # 비즈니스 로직 처리
+        pass
+
+# Query (상태 조회)
+class GetPortfolioQuery:
+    async def handle(self, portfolio_id: str) -> Portfolio:
+        # 조회 로직
+        pass
+```
+
+### 4. 메시지 플로우 패턴 (기존 패턴 유지)
+비동기 메시지 기반 통신을 따라야 합니다:
+
+```
+Strategy Worker → request.capital.allocation → Capital Manager
+Capital Manager → commands.execute_trade → Exchange Connector
+Exchange Connector → events.trade_executed → All subscribers
+```
+
+### 5. 상태 조정 (State Reconciliation)
+시스템 시작 시 반드시 상태 조정을 수행해야 합니다:
+
+```python
+# Core Engine 시작 시 필수
+reconciler.reconcile_state()
+```
+
+## 🔒 보안 및 안전 규칙
+
+### 절대 금지사항
+1. **API 키나 시크릿을 코드에 하드코딩 금지** - GCP Secret Manager 사용 필수
+2. **실제 돈 거래 전 dry-run 모드 테스트 필수**
+3. **개별 전략 실패로 인한 시스템 전체 크래시 방지**
+
+### 필수 구현사항
+1. **거래소 API 호출에 rate limiting 구현**
+2. **모든 거래 제안은 Capital Manager 검증 필수**
+3. **시스템 재시작 후 상태 조정 테스트 필수**
+4. **외부 API 호출에 circuit breaker 패턴 적용**
+
+## 📊 로깅 및 에러 처리
+
+### 로깅 표준
+- **구조화된 로깅**: JSON 형태 사용
+- **컨텍스트 포함**: trade_id, strategy_name 포함 필수
+- **로그 레벨**: DEBUG (개발), INFO (운영), ERROR (알럿)
+
+### 에러 처리
+```python
+try:
+    # 거래 로직
+    pass
+except Exception as e:
+    logger.error(
+        "Strategy execution failed",
+        extra={
+            "strategy_id": self.strategy_id,
+            "error": str(e),
+            "context": {...}
+        }
+    )
+    # 개별 전략 실패가 시스템 전체에 영향 주지 않도록 처리
+```
+
+## 🧪 테스트 가이드라인
+
+### 테스트 요구사항
+- **커버리지**: 85% 이상 유지
+- **단위 테스트**: 비즈니스 로직 격리 테스트
+- **통합 테스트**: 메시지 버스 통신 테스트
+- **E2E 테스트**: 모의 거래소를 통한 전체 플로우
+
+### 성능 요구사항
+- **거래 실행 지연**: <200ms
+- **메모리 사용량**: Worker당 <256MB
+- **동시 거래쌍**: 최소 10개 지원
+
+## 📈 개발 워크플로우
+
+### 새로운 개발 프로세스 (설계 → 문서화 → 구현)
+1. **설계 문서 참조** → `/docs/design/` 문서들 활용
+2. **인터페이스 우선** → Port 정의 후 구현
+3. **테스트 케이스 설계** → TEST_STRATEGY.md 기반
+4. **점진적 구현** → IMPLEMENTATION_PLAN.md 단계별 진행
+5. **기존 코드 최소 수정** → Adapter 패턴으로 래핑
+
+### 기능 추가 시 체크리스트
+- [ ] `SYSTEM_ARCHITECTURE_V2.md`에서 전체 구조 확인
+- [ ] `INTERFACE_SPECIFICATION.md`에서 필요한 Port 인터페이스 확인
+- [ ] Port 인터페이스부터 정의 (구현 전)
+- [ ] `TEST_STRATEGY.md` 기반 테스트 케이스 작성
+- [ ] Adapter로 기존 코드 래핑 (수정 최소화)
+- [ ] Factory Pattern으로 객체 생성
+- [ ] 단위 테스트 → 통합 테스트 → E2E 테스트
+
+### V-Model 방법론 준수
+1. **요구사항** → 설계 → 구현 → 테스트
+2. **TDD 접근**: 테스트 우선 작성
+3. **문서화**: `/docs/` 업데이트 필수
+4. **코드 리뷰**: SOLID 원칙, 보안, 성능 검토
+
+### Git 컨벤션
+- **브랜치**: `feature/`, `bugfix/`, `hotfix/`
+- **커밋**: `type: description` (feat, fix, docs, refactor)
+- **PR**: 트레이딩 시스템 안전성 체크리스트 포함
+
+## 🎛️ 환경 설정
+
+### 필수 환경 변수
+```bash
+export GCP_PROJECT_ID="your-project-id"
+export GOOGLE_APPLICATION_CREDENTIALS="path/to/service-account.json" 
+export ENVIRONMENT="development"  # or "staging", "production"
+```
+
+### 개발 명령어
+```bash
+# 로컬 개발 환경
+docker-compose up -d
+
+# 테스트 실행
+pytest tests/ -v --cov=src --cov-report=html
+
+# 코드 품질 검사
+black src/ tests/
+flake8 src/ tests/
+mypy src/
+
+# 데이터베이스 마이그레이션
+alembic upgrade head
+alembic revision --autogenerate -m "description"
+```
+
+### 배포 명령어
+```bash
+# GCP 배포
+gcloud builds submit --config=cloudbuild.yaml
+
+# 시스템 상태 확인
+bot-cli status
+
+# 로그 확인
+bot-cli logs core-engine
+```
+
+## 📋 중요한 원칙
+
+1. **금융 시스템**: 속도보다 정확성과 안전성 우선
+2. **프로세스 격리**: 각 전략은 별도 프로세스로 실행
+3. **메시지 기반**: 동기 호출 대신 비동기 메시지 사용
+4. **단일 책임**: 각 서비스는 하나의 책임만 가짐
+5. **상태 무결성**: 시스템-거래소 간 상태 일치 보장
+
+## 📚 설계 문서 및 개발 가이드
+
+### 🎯 최신 아키텍처 설계 (2025.06.26 업데이트)
+코드 수정을 최소화하고 안전한 기능 추가를 위한 체계적 설계 문서들:
+
+#### **1. 시스템 아키텍처 V2.0** (`/docs/design/SYSTEM_ARCHITECTURE_V2.md`)
+- **Hexagonal Architecture (Port & Adapter)** 적용
+- **Event-Driven Architecture** 설계  
+- **CQRS Pattern** 구현 가이드
+- **확장성과 테스트 용이성** 중심 설계
+
+**사용 시기**: 새로운 컴포넌트 추가하거나 기존 시스템 리팩토링 시 반드시 참조
+
+#### **2. 인터페이스 명세서** (`/docs/design/INTERFACE_SPECIFICATION.md`) 
+- **모든 Port 인터페이스 정의** (ExchangePort, RiskManagerPort, RepositoryPort 등)
+- **Contract-First Development** 가이드
+- **Factory Pattern** 구현 예시
+- **에러 처리 및 로깅 표준**
+
+**사용 시기**: 새로운 서비스 구현 전 인터페이스 먼저 확인, Mock 객체 생성 시
+
+#### **3. 테스트 전략** (`/docs/design/TEST_STRATEGY.md`)
+- **테스트 피라미드**: Unit(70%) + Integration(25%) + E2E(5%)
+- **금융 시스템 특화** 안전 테스트 케이스
+- **성능 테스트** (거래 실행 <200ms)
+- **테스트 자동화 스크립트**
+
+**사용 시기**: 새로운 기능 개발 시 테스트 케이스 작성, CI/CD 파이프라인 구성 시
+
+#### **4. 구현 실행 계획** (`/docs/design/IMPLEMENTATION_PLAN.md`)
+- **8주 단계별 마이그레이션** 로드맵
+- **Strangler Fig Pattern** 기반 점진적 교체 전략
+- **롤백 계획** 및 안전 장치
+- **하이브리드 서비스** 구현 가이드
+
+**사용 시기**: 대규모 리팩토링이나 새로운 아키텍처 도입 시 단계별 실행 가이드
+
+### 🔧 개발 시 문서 활용 원칙
+
+#### **기능 추가 워크플로우**
+```bash
+1. SYSTEM_ARCHITECTURE_V2.md → 전체 구조 파악
+2. INTERFACE_SPECIFICATION.md → 필요한 Port 인터페이스 확인  
+3. TEST_STRATEGY.md → 테스트 케이스 설계
+4. IMPLEMENTATION_PLAN.md → 구현 순서 및 마이그레이션 전략
+5. 코드 구현 → 기존 코드 수정 최소화
+```
+
+#### **문제 해결 시 참조 순서**
+1. **인터페이스 문제** → `INTERFACE_SPECIFICATION.md`
+2. **테스트 실패** → `TEST_STRATEGY.md`  
+3. **아키텍처 설계** → `SYSTEM_ARCHITECTURE_V2.md`
+4. **마이그레이션 이슈** → `IMPLEMENTATION_PLAN.md`
+
+### 📖 기존 문서 (참고용)
+- 기본 아키텍처: `/docs/design-docs/00_System_Overview_and_Architecture.md`
+- MVP 계획: `/docs/mvp/` (30일 로드맵)
+- 고급 기능: `/docs/full-system/`
+- 리스크 관리: `/docs/design-docs/02_Capital_and_Risk_Management.md`
+
+## 🤝 Claude Code 통합
+
+이 프로젝트는 Claude Code (claude.ai/code)와 통합되어 있습니다:
+
+### 📋 주요 가이드 문서
+- **`CLAUDE.md`** - Claude Code 전용 종합 개발 가이드
+  - 절대적 개발 규칙 (코드 스타일, 보안, 테스트)
+  - Letrade_v1 특화 아키텍처 패턴
+  - 설계 문서 활용 워크플로우
+  - 환경 설정 및 개발 도구
+- **`.cursorrules`** - Cursor IDE 전용 코딩 규칙
+
+### 🔗 문서 참조 우선순위
+1. **CLAUDE.md** - 종합 개발 가이드 (Claude Code용)
+2. **docs/design/** - 최신 아키텍처 설계 문서
+3. **.cursorrules** - Cursor IDE 코딩 규칙
+
+### 💡 개발 시 참조 방법
+- **새로운 기능 개발**: CLAUDE.md → Port & Adapter 패턴 적용
+- **아키텍처 설계**: docs/design/SYSTEM_ARCHITECTURE_V2.md 참조
+- **코딩 스타일**: .cursorrules + CLAUDE.md 절대적 규칙 적용
+
+이 규칙들을 준수하여 안전하고 확장 가능한 암호화폐 거래 시스템을 구축하세요.
