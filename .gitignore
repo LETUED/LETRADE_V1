@@ -266,3 +266,87 @@ models/
 *.joblib
 *.h5
 *.pb
+
+# =============================================================================
+# 🔒 추가 민감한/핵심 파일들 (Letrade_v1 특화)
+# =============================================================================
+
+# 🚨 절대 커밋하면 안되는 핵심 동작 문서들
+docs/reports/PERFORMANCE_ACHIEVEMENT_REPORT.md
+docs/reports/MVP_CERTIFICATION.md
+docs/reports/FINAL_METRICS_ANALYSIS.md
+docs/testing/24H_CONTINUOUS_TESTING_GUIDE.md
+
+# 🔐 환경별 설정 파일들 (추가 발견)
+.env.simulation_test
+.env.telegram
+.env.prod.example
+.env.live_test
+
+# 📊 실시간 데이터 및 결과 파일들
+archive/
+*.prof
+*.profile
+simulation_test_report_*.txt
+backtest_results_*.json
+enhanced_backtest_results_*.json
+
+# 🗄️ 캐시 및 임시 생성 파일들
+src/htmlcov/
+.claude/settings.local.json
+continuous_test*.log
+
+# 🔧 개발 도구별 설정
+.cursorrule
+.cursor/
+.vscode/settings.json
+.vscode/launch.json
+
+# =============================================================================
+# 🎯 프로젝트 특화 ignore (금융 시스템)
+# =============================================================================
+
+# 📈 거래 데이터 및 백테스트 결과 (민감함)
+backtest_data/
+trading_data/
+market_data/
+*.trading_log
+*.trade_history
+
+# 🔒 API 연결 및 인증 관련
+*_credentials.json
+*_api_keys.txt
+exchange_config.json
+telegram_bot_token.txt
+
+# 📊 성능 및 모니터링 데이터
+monitoring_data/
+performance_logs/
+system_metrics/
+*.perf
+*.benchmark
+
+# 🧪 테스트 환경 데이터
+test_db/
+mock_data/
+simulation_results/
+
+# 🔄 CI/CD 및 배포 관련
+deployment_logs/
+rollback_data/
+*.deploy_log
+.github/workflows/*.backup
+
+# 📋 개발 과정 임시 파일들
+*.draft
+*.work
+*.wip
+*_backup.*
+*_old.*
+*_temp.*
+
+# 🎯 Letrade 특화 보안 파일들
+letrade_*.key
+binance_*.json
+exchange_*.conf
+strategy_*.secret

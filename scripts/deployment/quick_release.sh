@@ -30,13 +30,15 @@ echo "⚡ Letrade_v1 빠른 릴리즈"
 echo "========================"
 echo "커밋 메시지: $COMMIT_MESSAGE"
 
-# 1. 빠른 테스트
-log_info "1. 빠른 테스트 실행 중..."
-if ./scripts/test_local.sh > /dev/null 2>&1; then
-    log_success "로컬 테스트 통과"
+# 1. 철저한 내부 테스트 (절대 심플하면 안됨)
+log_info "1. 철저한 내부 테스트 실행 중..."
+echo "⚠️  이것은 심플한 테스트가 아닙니다 - 금융 시스템에 적합한 엄격한 검증을 수행합니다"
+if ./scripts/test_local.sh; then
+    log_success "철저한 내부 테스트 통과"
 else
-    echo "❌ 로컬 테스트 실패"
-    echo "💡 수동 실행: ./scripts/test_local.sh"
+    echo "❌ 철저한 내부 테스트 실패"
+    echo "🚨 중요: 내부 테스트는 절대 심플하면 안됩니다"
+    echo "💡 다시 실행: ./scripts/test_local.sh"
     exit 1
 fi
 
