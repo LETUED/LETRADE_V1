@@ -2,7 +2,7 @@
 Moving Average Crossover Strategy Implementation
 
 이동평균 교차 전략 구현체입니다.
-단기 이동평균(fast MA)과 장기 이동평균(slow MA)의 교차를 기반으로 
+단기 이동평균(fast MA)과 장기 이동평균(slow MA)의 교차를 기반으로
 매수/매도 신호를 생성합니다.
 
 골든 크로스: 단기 MA가 장기 MA를 상향 돌파 시 매수 신호
