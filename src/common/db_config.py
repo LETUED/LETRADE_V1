@@ -316,3 +316,4 @@ def validate_database_config() -> Dict[str, Any]:
         "total_required": len(required_vars),
         "total_existing": len(existing_vars),
     }
+

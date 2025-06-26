@@ -499,3 +499,4 @@ def init_database() -> None:
     """데이터베이스 초기화 (연결 + 테이블 생성)"""
     db_manager.connect()
     db_manager.create_tables()
+
