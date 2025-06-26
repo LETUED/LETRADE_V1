@@ -57,7 +57,7 @@ class CommandHandler:
         """
         user = update.effective_user
 
-        welcome_message = f"""
+        welcome_message = """
 🚀 **Letrade V1 자동 거래 시스템**
 
 안녕하세요, {user.first_name}님!
@@ -206,7 +206,7 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
             status_icon = "🟢" if status_data.get("healthy", False) else "🔴"
             status_text = "정상" if status_data.get("healthy", False) else "오류"
 
-            message = f"""
+            message = """
 {status_icon} **시스템 상태: {status_text}**
 
 **📊 핵심 지표:**
@@ -282,7 +282,7 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
                 else:
                     asset_lines.append(f"{symbol}: ${value:.2f} ({percentage:.1f}%)")
 
-            message = f"""💼 **포트폴리오 현황**
+            message = """💼 **포트폴리오 현황**
 
 **📊 계정 요약 (Binance Spot)**
 • 총 자산: ${total_value:.2f}
@@ -466,7 +466,7 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
                 await update.message.reply_text(
                     f"✅ **전략 {strategy_id} 중지 완료**\n\n"
                     f"전략 #{strategy_id}가 성공적으로 중지되었습니다.\n"
-                    f"현재 진행 중인 거래는 안전하게 유지됩니다.\n\n"
+                    "현재 진행 중인 거래는 안전하게 유지됩니다.\n\n"
                     f"🔄 재시작: `/start_strategy {strategy_id}` 명령어 사용",
                     parse_mode="Markdown",
                 )
@@ -475,7 +475,7 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
                 await update.message.reply_text(
                     f"❌ **전략 {strategy_id} 중지 실패**\n\n"
                     f"오류: {error_msg}\n\n"
-                    f"잠시 후 다시 시도해 주세요.",
+                    "잠시 후 다시 시도해 주세요.",
                     parse_mode="Markdown",
                 )
 
@@ -552,8 +552,8 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
             await update.message.reply_text(
                 f"🚀 **전략 {strategy_id} 시작 요청**\n\n"
                 f"전략 #{strategy_id}를 시작하고 있습니다.\n"
-                f"시스템 검증과 초기화가 완료되면 거래를 시작합니다.\n\n"
-                f"⏳ 처리 중...",
+                "시스템 검증과 초기화가 완료되면 거래를 시작합니다.\n\n"
+                "⏳ 처리 중...",
                 parse_mode="Markdown",
             )
 
@@ -622,8 +622,8 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
 
             await update.message.reply_text(
                 f"📈 **{period_korean[period]} 수익률 분석 중...**\n\n"
-                f"거래 내역과 성과를 분석하고 있습니다.\n"
-                f"잠시만 기다려주세요.",
+                "거래 내역과 성과를 분석하고 있습니다.\n"
+                "잠시만 기다려주세요.",
                 parse_mode="Markdown",
             )
 
@@ -715,7 +715,7 @@ Letrade V1 시스템에 성공적으로 연결되었습니다.
         status_icon = "🟢" if system_healthy else "🔴"
         status_text = "정상" if system_healthy else "오류"
 
-        message = f"""
+        message = """
 {status_icon} **시스템 상태: {status_text}**
 
 **📊 핵심 지표:**

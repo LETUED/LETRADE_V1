@@ -98,7 +98,7 @@ class DailyLossLimitRule(ValidationRule):
 
         if potential_loss_percent > self.risk_params.max_daily_loss_percent:
             self._rejection_reason = (
-                f"Trade would exceed daily loss limit "
+                "Trade would exceed daily loss limit "
                 f"({potential_loss_percent:.2f}% > {self.risk_params.max_daily_loss_percent}%)"
             )
             return False
@@ -256,7 +256,7 @@ class PortfolioRiskRule(ValidationRule):
 
         if new_risk_percent > self.risk_params.max_portfolio_risk_percent:
             self._rejection_reason = (
-                f"Trade would exceed portfolio risk limit "
+                "Trade would exceed portfolio risk limit "
                 f"({new_risk_percent:.2f}% > {self.risk_params.max_portfolio_risk_percent}%)"
             )
             return False

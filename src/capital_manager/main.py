@@ -128,7 +128,7 @@ class CapitalManager:
         각 단계가 명확하게 분리되어 있음
         """
         logger.info(
-            f"Validating trade request",
+            "Validating trade request",
             extra={
                 "symbol": trade_request.symbol,
                 "side": trade_request.side,
@@ -165,7 +165,7 @@ class CapitalManager:
             await self._log_high_risk_trade(trade_request, response)
 
         logger.info(
-            f"Trade validation completed",
+            "Trade validation completed",
             extra={
                 "result": response.result.value,
                 "risk_level": response.risk_level.value,

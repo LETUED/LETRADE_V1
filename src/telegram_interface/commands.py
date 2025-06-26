@@ -85,7 +85,7 @@ class CommandHandler:
                 )
                 self.reporting_enabled = True
 
-                success_message = f"""
+                success_message = """
 🚀 **시스템 시작 완료!**
 
 안녕하세요, {user.first_name}님!
@@ -121,9 +121,9 @@ class CommandHandler:
             else:
                 error_msg = start_result.get("error", "알 수 없는 오류")
                 await update.message.reply_text(
-                    f"❌ **시스템 시작 실패**\n\n"
+                    "❌ **시스템 시작 실패**\n\n"
                     f"오류: {error_msg}\n\n"
-                    f"잠시 후 다시 시도해 주세요."
+                    "잠시 후 다시 시도해 주세요."
                 )
 
         except Exception as e:
@@ -163,7 +163,7 @@ class CommandHandler:
             if stop_result.get("success", False):
                 self.system_running = False
 
-                stop_message = f"""
+                stop_message = """
 🛑 **시스템 중지 완료**
 
 {user.first_name}님, 시스템이 안전하게 중지되었습니다.
@@ -195,9 +195,9 @@ class CommandHandler:
             else:
                 error_msg = stop_result.get("error", "알 수 없는 오류")
                 await update.message.reply_text(
-                    f"❌ **시스템 중지 실패**\n\n"
+                    "❌ **시스템 중지 실패**\n\n"
                     f"오류: {error_msg}\n\n"
-                    f"긴급한 경우 관리자에게 연락해 주세요."
+                    "긴급한 경우 관리자에게 연락해 주세요."
                 )
 
         except Exception as e:
@@ -252,7 +252,7 @@ class CommandHandler:
                 )
                 self.reporting_enabled = True
 
-                restart_message = f"""
+                restart_message = """
 ✅ **시스템 재시작 완료!**
 
 {user.first_name}님, 시스템이 성공적으로 재시작되었습니다.
@@ -284,11 +284,11 @@ class CommandHandler:
             else:
                 error_msg = restart_result.get("error", "알 수 없는 오류")
                 await update.message.reply_text(
-                    f"❌ **시스템 재시작 실패**\n\n"
+                    "❌ **시스템 재시작 실패**\n\n"
                     f"오류: {error_msg}\n\n"
-                    f"수동으로 중지 후 시작해 보세요:\n"
-                    f"1. `/stop`\n"
-                    f"2. `/start`"
+                    "수동으로 중지 후 시작해 보세요:\n"
+                    "1. `/stop`\n"
+                    "2. `/start`"
                 )
 
         except Exception as e:
@@ -394,7 +394,7 @@ class CommandHandler:
             system_status = "🟢 실행 중" if self.system_running else "🔴 중지됨"
             reporting_status = "🟢 활성화" if self.reporting_enabled else "🔴 비활성화"
 
-            message = f"""
+            message = """
 {status_icon} **시스템 상태: {status_text}**
 
 🎛️ **제어 상태:**
@@ -481,7 +481,7 @@ class CommandHandler:
                 else "🟡 중간" if daily_loss < 4 else "🔴 높음"
             )
 
-            message = f"""💼 **포트폴리오 현황**
+            message = """💼 **포트폴리오 현황**
 
 📊 **계정 요약 (Binance Spot)**
 • 총 자산: ${total_value:.2f}

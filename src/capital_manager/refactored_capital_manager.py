@@ -259,7 +259,7 @@ class PortfolioRiskRule(ValidationRule):
         if position_size_percent > self.risk_params.max_position_size_percent:
             return f"Position size {position_size_percent:.2f}% exceeds limit {self.risk_params.max_position_size_percent}%"
 
-        return f"Trade would exceed portfolio risk limit"
+        return "Trade would exceed portfolio risk limit"
 
 
 # ============== 리팩토링된 Capital Manager ==============

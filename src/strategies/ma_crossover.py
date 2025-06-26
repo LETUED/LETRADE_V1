@@ -61,7 +61,7 @@ class MAcrossoverStrategy(BaseStrategy):
         self._indicators_calculated = False
 
         logger.info(
-            f"MAcrossoverStrategy initialized",
+            "MAcrossoverStrategy initialized",
             extra={
                 "strategy_id": self.strategy_id,
                 "fast_period": self.fast_period,
@@ -418,7 +418,7 @@ class MAcrossoverStrategy(BaseStrategy):
     async def on_start(self):
         """전략 시작 시 실행되는 커스텀 로직"""
         logger.info(
-            f"MAcrossoverStrategy starting",
+            "MAcrossoverStrategy starting",
             extra={
                 "strategy_id": self.strategy_id,
                 "symbol": self.symbol,
@@ -436,7 +436,7 @@ class MAcrossoverStrategy(BaseStrategy):
     async def on_stop(self):
         """전략 중지 시 실행되는 커스텀 로직"""
         logger.info(
-            f"MAcrossoverStrategy stopping",
+            "MAcrossoverStrategy stopping",
             extra={
                 "strategy_id": self.strategy_id,
                 "last_position": self._position_side,

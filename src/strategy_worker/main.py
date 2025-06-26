@@ -583,7 +583,7 @@ class StrategyProcessRunner:
 
             if success:
                 logger.info(
-                    f"Subscribed to market data",
+                    "Subscribed to market data",
                     extra={
                         "strategy_id": self.strategy_config.strategy_id,
                         "routing_key": routing_key,
@@ -591,7 +591,7 @@ class StrategyProcessRunner:
                 )
             else:
                 logger.error(
-                    f"Failed to subscribe to market data",
+                    "Failed to subscribe to market data",
                     extra={
                         "strategy_id": self.strategy_config.strategy_id,
                         "routing_key": routing_key,
@@ -648,7 +648,7 @@ class StrategyProcessRunner:
 
         if success:
             logger.info(
-                f"Trading signal sent to Capital Manager",
+                "Trading signal sent to Capital Manager",
                 extra={
                     "strategy_id": self.strategy_config.strategy_id,
                     "routing_key": signal_routing_key,
@@ -658,7 +658,7 @@ class StrategyProcessRunner:
             )
         else:
             logger.error(
-                f"Failed to send signal to Capital Manager",
+                "Failed to send signal to Capital Manager",
                 extra={"strategy_id": self.strategy_config.strategy_id},
             )
 
@@ -669,7 +669,7 @@ class StrategyProcessRunner:
 
             health_status = await self.strategy.health_check()
             logger.debug(
-                f"Strategy health check",
+                "Strategy health check",
                 extra={
                     "strategy_id": self.strategy_config.strategy_id,
                     "healthy": health_status.get("healthy", False),

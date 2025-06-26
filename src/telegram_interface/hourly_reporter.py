@@ -129,7 +129,7 @@ class HourlyReporter:
             minutes = int((running_time.total_seconds() % 3600) // 60)
 
             # Format comprehensive report
-            report = f"""
+            report = """
 🕐 **정기 시스템 보고서** ({datetime.now(timezone.utc).strftime('%H:%M UTC')})
 
 ⏱️ **운영 시간**: {hours}시간 {minutes}분
@@ -165,7 +165,7 @@ class HourlyReporter:
                 else "🟡 중간" if daily_loss < 4 else "🔴 높음"
             )
 
-            report += f"""
+            report += """
 ⚠️ **리스크 상태**: {risk_level}
 • 일일 손실: ${daily_loss:.2f}/5.00 ({daily_loss/5*100:.1f}%)
 

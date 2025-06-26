@@ -148,7 +148,7 @@ class MenuSystem:
             "🟢 활성" if system_status.get("trading_active", False) else "🔴 중지"
         )
 
-        return f"""
+        return """
 🎛️ **Letrade V1 제어 센터**
 
 **시스템 상태**: {status_icon} {system_status.get('status_text', '확인 중')}
@@ -256,7 +256,7 @@ class MenuSystem:
             ],
         ]
 
-        trading_text = f"""
+        trading_text = """
 🎯 **거래 전략 설정**
 
 **현재 설정**:
@@ -329,7 +329,7 @@ class MenuSystem:
             ],
         ]
 
-        portfolio_text = f"""
+        portfolio_text = """
 📊 **포트폴리오 관리 설정**
 
 **현재 설정**:
@@ -398,7 +398,7 @@ class MenuSystem:
 
         action_name = action_descriptions.get(action, action)
 
-        text = f"""
+        text = """
 ⚠️ **작업 확인 필요**
 
 **작업**: {action_name}
@@ -509,7 +509,7 @@ class MenuSystem:
         if action == "status":
             # Show quick status update
             status = await self._get_system_status()
-            status_text = f"""
+            status_text = """
 📊 **빠른 상태 확인** ({datetime.now().strftime('%H:%M:%S')})
 
 **시스템**: {'🟢 정상' if status.get('healthy') else '🔴 문제'}

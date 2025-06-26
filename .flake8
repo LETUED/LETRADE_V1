@@ -1,0 +1,40 @@
+[flake8]
+max-line-length = 120
+extend-ignore = E203, W503, F401, F541
+exclude = 
+    .git,
+    __pycache__,
+    docs/,
+    old/,
+    build/,
+    dist/,
+    migrations/,
+    .venv/,
+    venv/,
+    tests/fixtures/,
+    alembic/versions/,
+    src/capital_manager/main_backup.py,
+    test_*.py,
+    simple_*.py,
+    debug_*.py,
+    run_*.py,
+    continuous_testing_system.py
+
+per-file-ignores =
+    # Init files can have unused imports
+    __init__.py:F401
+    # Test files can be longer and have different conventions
+    tests/*:F401,E501
+    # Config files can have unused imports
+    */config.py:F401,W291
+    # Interfaces can have unused imports for type hints
+    */interfaces.py:F401
+    # Scripts can have different formatting
+    scripts/*:E501,F401
+
+# Ignore specific error codes:
+# E203: Whitespace before ':'
+# W503: Line break before binary operator
+# F401: Imported but unused (temporary for MVP)
+# F541: f-string without placeholders (logging patterns)
+# E501: Line too long (using max-line-length instead)

@@ -422,7 +422,7 @@ class NotificationManager:
         side_emoji = "📈" if side.lower() == "buy" else "📉"
         side_korean = "매수" if side.lower() == "buy" else "매도"
 
-        return f"""
+        return """
 {side_emoji} **{side_korean} 완료**
 
 **거래 정보:**
@@ -439,7 +439,7 @@ class NotificationManager:
         message = data.get("message", "시스템 알림")
         component = data.get("component", "System")
 
-        return f"""
+        return """
 **구성요소:** {component}
 **메시지:** {message}
 
@@ -448,7 +448,7 @@ class NotificationManager:
 
     def _format_performance_data(self, data: Dict[str, Any]) -> str:
         """Format performance notification data."""
-        return f"""
+        return """
 **성과 요약:**
 성과 데이터 형식화 구현 예정
         """.strip()
@@ -458,7 +458,7 @@ class NotificationManager:
         error_message = data.get("error_message", "알 수 없는 오류")
         component = data.get("component", "System")
 
-        return f"""
+        return """
 **구성요소:** {component}
 **오류:** {error_message}
 
@@ -470,7 +470,7 @@ class NotificationManager:
         strategy_id = data.get("strategy_id", "N/A")
         event_type = data.get("event_type", "unknown")
 
-        return f"""
+        return """
 **전략 ID:** {strategy_id}
 **이벤트:** {event_type}
 
@@ -484,7 +484,7 @@ class NotificationManager:
 
         change_emoji = "📈" if change_percent > 0 else "📉"
 
-        return f"""
+        return """
 {change_emoji} **포트폴리오 변동: {change_percent:+.2f}%**
 
 **현재 가치:** ${current_value:,.2f}

@@ -63,7 +63,7 @@ class CapitalManagerDatabaseHandler:
                 if portfolio:
                     self._portfolio_cache = portfolio
                     logger.info(
-                        f"Loaded portfolio state",
+                        "Loaded portfolio state",
                         extra={
                             "portfolio_id": self.portfolio_id,
                             "name": portfolio.name,
@@ -129,7 +129,7 @@ class CapitalManagerDatabaseHandler:
                 session.commit()
 
                 logger.info(
-                    f"Saved trade validation result",
+                    "Saved trade validation result",
                     extra={
                         "trade_id": trade.id,
                         "result": validation_response.result.value,
@@ -169,7 +169,7 @@ class CapitalManagerDatabaseHandler:
                 session.commit()
 
                 logger.info(
-                    f"Updated position",
+                    "Updated position",
                     extra={"symbol": symbol, "portfolio_id": self.portfolio_id},
                 )
 
@@ -392,7 +392,7 @@ class CapitalManagerDatabaseHandler:
                     session.commit()
 
                     logger.info(
-                        f"Recorded trade execution",
+                        "Recorded trade execution",
                         extra={
                             "trade_id": trade_execution.trade_id,
                             "status": trade_execution.status,

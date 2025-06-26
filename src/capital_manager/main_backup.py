@@ -1201,7 +1201,7 @@ class CapitalManager:
                     .join(Strategy)
                     .filter(
                         Strategy.portfolio_id == self._portfolio_id,
-                        Position.is_open == True,
+                        Position.is_open ,
                     )
                     .all()
                 )
