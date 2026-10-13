@@ -991,7 +991,7 @@ git commit --allow-empty -m "feat: complete Day $DAY milestone - $MILESTONE
 - [Highlight important decisions]
 - [Note any trade-offs or limitations]
 
-🤖 Generated with automated milestone commit script"
+(마일스톤 커밋 스크립트)"
 
 echo "✅ Milestone commit created for Day $DAY: $MILESTONE"
 ```
