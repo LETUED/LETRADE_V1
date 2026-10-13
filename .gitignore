@@ -350,3 +350,7 @@ letrade_*.key
 binance_*.json
 exchange_*.conf
 strategy_*.secret
+# 환경별 비밀 설정 (예시 파일만 추적)
+.env.*
+!.env.example
+!.env.*.example
