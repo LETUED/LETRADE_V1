@@ -140,7 +140,7 @@ Tested: ✅ All tests passed
 Security: ✅ No vulnerabilities found
 Performance: ✅ Benchmarks passed
 
-🤖 Generated with automated release system"
+(자동 릴리스 스크립트)"
 
 log_success "릴리즈 브랜치 생성: $RELEASE_BRANCH"
 

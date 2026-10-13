@@ -254,7 +254,7 @@ $RECENT_COMMITS
 - AI/ML integration: $(if [[ "$DAY" =~ ^1[5-9]|2[0-1] ]]; then echo "✅ Complete"; else echo "⏳ Pending"; fi)
 - Advanced features: $(if [[ "$DAY" =~ ^2[2-8] ]]; then echo "✅ Complete"; else echo "⏳ Pending"; fi)
 
-🤖 Generated with automated milestone commit script
+(마일스톤 커밋 스크립트)
 📍 Branch: $CURRENT_BRANCH
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
